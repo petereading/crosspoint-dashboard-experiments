@@ -511,6 +511,24 @@ To use custom sleep images, set the sleep screen mode to **Custom** or **Cover +
 > [!TIP]
 > You can set an image as the sleep screen cover directly from the BMP image viewer in the **[Browse Files](#33-browse-files-screen)** screen.
 
+#### Remote Image lock screen (experimental)
+
+Remote Image is a generic lock screen for dashboards rendered by an external service:
+
+1. Save your Wi-Fi network in CrossPoint as usual.
+2. Open **Home → Lock Screens → Remote Image**.
+3. Enter a public HTTPS URL that returns the BMP file directly.
+4. Set **Settings → System → Remote Image Refresh Interval**.
+5. To use it whenever the reader sleeps, set **Settings → Display → Sleep Screen → Lock Screen**, then set
+   **Lock Screen Type → Remote Image**.
+
+The device wakes on the timer, reconnects to the last saved Wi-Fi network, downloads the image, validates it, displays
+it, and returns to deep sleep. A failed download or invalid BMP leaves the previous successful image in place.
+
+Use an uncompressed BMP at the intended device dimensions (X3: 528×792 portrait; X4: 480×800 portrait, or reversed
+for landscape). The image's aspect ratio controls display orientation. Redirects are supported, but the configured URL
+itself must begin with `https://`.
+
 ---
 
 ### 3.8 Custom Fonts (SD Card)

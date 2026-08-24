@@ -43,6 +43,7 @@ class CrossPointSettings {
     SLEEP_LOCK_GITHUB = 0,
     SLEEP_LOCK_WEATHER = 1,
     SLEEP_LOCK_TEMPEST = 2,
+    SLEEP_LOCK_REMOTE_IMAGE = 3,
     SLEEP_LOCK_SCREEN_COUNT
   };
   enum SLEEP_SCREEN_COVER_MODE { FIT = 0, CROP = 1, SLEEP_SCREEN_COVER_MODE_COUNT };
@@ -286,10 +287,13 @@ class CrossPointSettings {
   char weatherZip[8] = "";
   // Optional friendly label for the Tempest local-station dashboard (empty = "Tempest")
   char tempestLabel[24] = "";
+  // Public HTTPS URL for the externally generated Remote Image dashboard.
+  char remoteImageUrl[256] = "";
   // Poll intervals for the timed dashboards, in minutes
   uint8_t githubRefreshMinutes = 60;
   uint8_t weatherRefreshMinutes = 30;
   uint8_t tempestRefreshMinutes = 10;
+  uint8_t remoteImageRefreshMinutes = 30;
   // Orientation all lock-screen dashboards render in (shared setting).
   uint8_t lockScreenOrientation = LOCK_ORIENT_LANDSCAPE;
   // Which dashboard the LOCK_SCREEN sleep-screen mode shows.

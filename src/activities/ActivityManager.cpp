@@ -16,6 +16,7 @@
 #include "home/HomeActivity.h"
 #include "home/RecentBooksActivity.h"
 #include "lockscreens/LockScreensActivity.h"
+#include "remote/RemoteImageDashboardActivity.h"
 #include "network/CrossPointWebServerActivity.h"
 #include "reader/ReaderActivity.h"
 #include "settings/OpdsServerListActivity.h"
@@ -212,6 +213,10 @@ void ActivityManager::goToTempestDashboard() {
   replaceActivity(std::make_unique<TempestDashboardActivity>(renderer, mappedInput));
 }
 
+void ActivityManager::goToRemoteImageDashboard() {
+  replaceActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput));
+}
+
 void ActivityManager::goToLockScreens() {
   replaceActivity(std::make_unique<LockScreensActivity>(renderer, mappedInput));
 }
@@ -223,6 +228,9 @@ void ActivityManager::goToLockScreenDashboard() {
       break;
     case CrossPointSettings::SLEEP_LOCK_TEMPEST:
       replaceActivity(std::make_unique<TempestDashboardActivity>(renderer, mappedInput, /*autoRefresh=*/true));
+      break;
+    case CrossPointSettings::SLEEP_LOCK_REMOTE_IMAGE:
+      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, /*autoRefresh=*/true));
       break;
     default:
       replaceActivity(std::make_unique<GithubDashboardActivity>(renderer, mappedInput, /*autoRefresh=*/true));
@@ -255,7 +263,8 @@ void ActivityManager::goHome(HomeMenuItem initialMenuItem) {
     } else if (activityName == "OpdsBookBrowser") {
       initialMenuItem = HomeMenuItem::OPDS_BROWSER;
     } else if (activityName == "GithubDashboard" || activityName == "WeatherDashboard" ||
-               activityName == "TempestDashboard" || activityName == "LockScreens") {
+               activityName == "TempestDashboard" || activityName == "RemoteImageDashboard" ||
+               activityName == "LockScreens") {
       initialMenuItem = HomeMenuItem::LOCK_SCREENS;
     } else if (activityName == "CrossPointWebServer") {
       initialMenuItem = HomeMenuItem::FILE_TRANSFER;

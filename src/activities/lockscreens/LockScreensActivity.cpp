@@ -37,6 +37,9 @@ void LockScreensActivity::loop() {
       case 2:
         onTempestOpen();
         break;
+      case 3:
+        onRemoteImageOpen();
+        break;
       default:
         break;
     }
@@ -56,8 +59,8 @@ void LockScreensActivity::render(RenderLock&&) {
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_LOCK_SCREENS));
 
   const std::vector<const char*> items = {tr(STR_GITHUB_DASHBOARD), tr(STR_WEATHER_DASHBOARD),
-                                          tr(STR_TEMPEST_DASHBOARD)};
-  const std::vector<UIIcon> icons = {Github, Weather, Tempest};
+                                          tr(STR_TEMPEST_DASHBOARD), tr(STR_REMOTE_IMAGE_DASHBOARD)};
+  const std::vector<UIIcon> icons = {Github, Weather, Tempest, Image};
 
   GUI.drawButtonMenu(
       renderer,
@@ -77,3 +80,5 @@ void LockScreensActivity::onGithubOpen() { activityManager.goToGithubDashboard()
 void LockScreensActivity::onWeatherOpen() { activityManager.goToWeatherDashboard(); }
 
 void LockScreensActivity::onTempestOpen() { activityManager.goToTempestDashboard(); }
+
+void LockScreensActivity::onRemoteImageOpen() { activityManager.goToRemoteImageDashboard(); }

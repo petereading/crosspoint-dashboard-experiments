@@ -1,6 +1,12 @@
 # CrossPoint Reader — Lock Screens Fork
 
-> **This is a community fork of [crosspoint-reader/crosspoint-reader](https://github.com/crosspoint-reader/crosspoint-reader)**, the excellent open-source e-reader firmware for Xteink X3/X4 devices. All credit for the core reader engine goes to the original CrossPoint team and contributors — this fork tracks their `develop` branch and adds one thing on top: **Lock Screens**, described below. Everything else works exactly like upstream CrossPoint.
+> [!CAUTION]
+> This repository is an experimental test project based on
+> [CrossPoint Reader Lock Screens](https://github.com/t0nyz0/crosspoint-reader-lockscreens). It is not actively
+> maintained. The Remote Image feature is under development and must not be released publicly until it has been tested
+> on a physical Xteink X3. Normal e-reader functionality is intended to remain unchanged.
+
+> **This is a community fork of [crosspoint-reader/crosspoint-reader](https://github.com/crosspoint-reader/crosspoint-reader)**, the excellent open-source e-reader firmware for Xteink X3/X4 devices. All credit for the core reader engine goes to the original CrossPoint team and contributors — this fork tracks their `develop` branch and adds one thing on top: **Lock Screens**, described below.
 >
 > Not affiliated with the CrossPoint project, Xteink, or any device manufacturer.
 
@@ -15,12 +21,15 @@ A new **"Lock Screens"** folder on the home menu holds always-on, periodically-r
 - **GitHub Repo** — your GitHub contribution heatmap, current streak/longest streak, most-in-a-day, and average — pulled from your public profile, no token needed.
 - **Weather** — current conditions (temp, feels-like, humidity, wind, rain chance) plus a 5-day forecast for a US ZIP code, via [Open-Meteo](https://open-meteo.com) (free, no API key or account).
 - **Tempest** — live local readings from a [WeatherFlow Tempest](https://weatherflow.com/tempest-weather-system/) weather station: temperature with feels-like, wind speed/gust/lull with a compass dial, humidity, pressure with a 3-hour rising/falling/steady trend, dew point, UV index, illuminance, solar radiation, and lightning distance. Reads the station's local UDP broadcast directly — **no cloud account, API token, or internet dependency** for the station data itself.
+- **Remote Image** — downloads a dashboard BMP from a configurable public HTTPS URL. GitHub Actions, Cloudflare Workers, or another external service can generate the image; the firmware remains data-source-agnostic.
 
-Each dashboard has its own refresh interval (Settings → System → *GitHub/Weather/Tempest* Refresh Interval), and a failed refresh never blanks the display — it just keeps showing the last known reading and quietly retries next cycle.
+Each dashboard has its own refresh interval under Settings → System, and a failed refresh never blanks the display — it just keeps showing the last successful dashboard and quietly retries next cycle. Remote Image downloads to a temporary file, validates the BMP, and only then replaces its cache.
 
-**Orientation** — all three dashboards render in either **landscape** (800×480, the default) or **portrait** (480×800), controlled by a single **Settings → System → Lock Screen Orientation** toggle. Landscape suits a device propped on a stand; portrait matches how you'd hold the reader. Each dashboard has a purpose-built layout for both (e.g. the weather forecast is a horizontal strip in landscape and a vertical list in portrait), not just a rotated image.
+**Orientation** — GitHub, Weather, and Tempest render in either **landscape** (800×480, the default) or **portrait** (480×800), controlled by **Settings → System → Lock Screen Orientation**. Remote Image instead follows the downloaded BMP's aspect ratio, so the external generator controls whether it is portrait or landscape.
 
-Home → **Lock Screens** → pick one → enter your GitHub username / ZIP code / (optional) station label the first time. WiFi credentials are shared with the rest of CrossPoint (the same saved networks you already use for File Transfer, etc.).
+Home → **Lock Screens** → pick one → enter its configuration the first time. Remote Image requires a public `https://` image URL. WiFi credentials are shared with the rest of CrossPoint (the same saved networks you already use for File Transfer, etc.).
+
+For Remote Image, generate an uncompressed BMP in the intended device resolution (X3: 528×792 portrait; X4: 480×800 portrait, or the reversed dimensions for landscape). The renderer accepts its existing 1-, 2-, 4-, 8-, 24-, and 32-bit uncompressed BMP formats and scales oversized images down to fit.
 
 **Use one as your actual sleep screen** — set **Settings → Display → Sleep Screen → Lock Screen**, and pick which one under **Lock Screen Type**. Now whenever the device sleeps (auto-timeout or power button), instead of a static image it shows the live dashboard and keeps it refreshed on its interval. Press the power button to wake straight back to your book or home — the lock screen is purely an idle display and never traps you in it.
 
@@ -235,8 +244,8 @@ For more details on the internal file structures, see the [file formats document
 This fork tracks upstream CrossPoint's `develop` branch and merges upstream changes in periodically. Bugs and features
 unrelated to Lock Screens should be reported/requested upstream at
 [crosspoint-reader/crosspoint-reader](https://github.com/crosspoint-reader/crosspoint-reader) — this fork exists only to
-carry the Lock Screens feature on top. Issues specific to Lock Screens (GitHub/Weather/Tempest dashboards) are welcome
-here.
+carry the Lock Screens feature on top. This experimental repository adds Remote Image for testing and is not an
+actively maintained support channel.
 
 CrossPoint Reader is **not affiliated with Xteink or any device manufacturer**.
 

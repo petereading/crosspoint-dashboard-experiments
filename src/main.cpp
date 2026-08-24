@@ -30,6 +30,7 @@
 #include "activities/Activity.h"
 #include "activities/ActivityManager.h"
 #include "activities/github/GithubDashboardActivity.h"
+#include "activities/remote/RemoteImageDashboardActivity.h"
 #include "activities/settings/SdFirmwareUpdateActivity.h"
 #include "activities/tempest/TempestDashboardActivity.h"
 #include "activities/weather/WeatherDashboardActivity.h"
@@ -527,6 +528,9 @@ void setup() {
   } else if (dashboardResume == CrossPointState::DASHBOARD_TEMPEST) {
     activityManager.replaceActivity(
         std::make_unique<TempestDashboardActivity>(renderer, mappedInputManager, /*autoRefresh=*/true));
+  } else if (dashboardResume == CrossPointState::DASHBOARD_REMOTE_IMAGE) {
+    activityManager.replaceActivity(
+        std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInputManager, /*autoRefresh=*/true));
   } else if (recoveryFirmwareMode) {
     // Skip normal home/reader routing: jump straight into the SD firmware picker.
     activityManager.replaceActivity(

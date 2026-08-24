@@ -26,7 +26,13 @@ class CrossPointState {
   // Which timed-poll dashboard (if any) is armed for its hourly/periodic timed
   // deep sleep cycle. Boot uses this to route an RTC timer wake back into the
   // right dashboard activity; any other wake reason clears it back to NONE.
-  enum ActiveDashboard : uint8_t { DASHBOARD_NONE = 0, DASHBOARD_GITHUB = 1, DASHBOARD_WEATHER = 2, DASHBOARD_TEMPEST = 3 };
+  enum ActiveDashboard : uint8_t {
+    DASHBOARD_NONE = 0,
+    DASHBOARD_GITHUB = 1,
+    DASHBOARD_WEATHER = 2,
+    DASHBOARD_TEMPEST = 3,
+    DASHBOARD_REMOTE_IMAGE = 4
+  };
   uint8_t activeDashboardMode = DASHBOARD_NONE;
 
   // Reference point for the Tempest dashboard's ~3-hour pressure tendency

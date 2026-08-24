@@ -65,7 +65,8 @@ void LockScreensActivity::render(RenderLock&&) {
   GUI.drawButtonMenu(
       renderer,
       Rect{0, metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing, pageWidth,
-           pageHeight - (metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing + metrics.buttonHintsHeight)},
+           pageHeight -
+               (metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing + metrics.buttonHintsHeight)},
       static_cast<int>(items.size()), selectorIndex, [&items](int index) { return std::string(items[index]); },
       [&icons](int index) { return icons[index]; });
 

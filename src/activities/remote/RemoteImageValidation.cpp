@@ -1,5 +1,6 @@
 #include "RemoteImageValidation.h"
 
+#include <algorithm>
 #include <cctype>
 #include <climits>
 
@@ -34,10 +35,9 @@ bool isHttpsUrl(const std::string_view url) {
   const size_t hostLength = (hostEnd == std::string_view::npos ? url.size() : hostEnd) - hostStart;
   if (hostLength == 0) return false;
 
-  for (const char c : url) {
-    if (std::iscntrl(static_cast<unsigned char>(c)) || std::isspace(static_cast<unsigned char>(c))) return false;
-  }
-  return true;
+  return std::none_of(url.begin(), url.end(), [](const char c) {
+    return std::iscntrl(static_cast<unsigned char>(c)) || std::isspace(static_cast<unsigned char>(c));
+  });
 }
 
 BmpError validateBmp(const uint8_t* header, const size_t headerSize, const uint64_t fileSize, BmpInfo* info) {

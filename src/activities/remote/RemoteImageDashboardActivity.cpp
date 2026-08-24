@@ -65,9 +65,8 @@ void RemoteImageDashboardActivity::onExit() {
 
 void RemoteImageDashboardActivity::promptUrl() {
   startActivityForResult(
-      std::make_unique<KeyboardEntryActivity>(renderer, mappedInput, tr(STR_REMOTE_IMAGE_URL),
-                                              SETTINGS.remoteImageUrl, sizeof(SETTINGS.remoteImageUrl) - 1,
-                                              InputType::Url),
+      std::make_unique<KeyboardEntryActivity>(renderer, mappedInput, tr(STR_REMOTE_IMAGE_URL), SETTINGS.remoteImageUrl,
+                                              sizeof(SETTINGS.remoteImageUrl) - 1, InputType::Url),
       [this](const ActivityResult& result) {
         if (result.isCancelled) {
           if (SETTINGS.remoteImageUrl[0] == '\0') {
@@ -335,12 +334,13 @@ bool RemoteImageDashboardActivity::renderCachedImage() const {
   }
 
   const auto originalOrientation = renderer.getOrientation();
-  renderer.setOrientation(bitmap.getHeight() >= bitmap.getWidth() ? GfxRenderer::Orientation::Portrait
-                                                                   : GfxRenderer::Orientation::LandscapeCounterClockwise);
+  renderer.setOrientation(bitmap.getHeight() >= bitmap.getWidth()
+                              ? GfxRenderer::Orientation::Portrait
+                              : GfxRenderer::Orientation::LandscapeCounterClockwise);
   const int pageWidth = renderer.getScreenWidth();
   const int pageHeight = renderer.getScreenHeight();
-  const float scale = std::min({1.0f, static_cast<float>(pageWidth) / bitmap.getWidth(),
-                                static_cast<float>(pageHeight) / bitmap.getHeight()});
+  const float scale = std::min(
+      {1.0f, static_cast<float>(pageWidth) / bitmap.getWidth(), static_cast<float>(pageHeight) / bitmap.getHeight()});
   const int renderedWidth = static_cast<int>(std::floor(bitmap.getWidth() * scale));
   const int renderedHeight = static_cast<int>(std::floor(bitmap.getHeight() * scale));
   const int x = (pageWidth - renderedWidth) / 2;

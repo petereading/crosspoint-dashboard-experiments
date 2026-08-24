@@ -41,8 +41,8 @@ void drawTempestBrandIcon(const GfxRenderer& renderer, int x, int y) {
 // it can't distinguish clear-vs-cloudy skies at night, so it defaults to
 // Clear after dark rather than guessing further.
 DashboardUI::WxCategory TempestDashboardActivity::localWeatherCategory() const {
-  if (precipType == 2) return DashboardUI::WxCategory::Snow;  // hail
-  if (precipType != 0) return DashboardUI::WxCategory::Rain;  // rain or rain+hail
+  if (precipType == 2) return DashboardUI::WxCategory::Snow;                           // hail
+  if (precipType != 0) return DashboardUI::WxCategory::Rain;                           // rain or rain+hail
   if (solarRadiationWm2 < 3 && uvIndex < 0.3f) return DashboardUI::WxCategory::Clear;  // likely night
   if (uvIndex >= 3.0f && solarRadiationWm2 >= 400) return DashboardUI::WxCategory::Clear;
   if (solarRadiationWm2 >= 120) return DashboardUI::WxCategory::PartlyCloudy;
@@ -339,8 +339,7 @@ void TempestDashboardActivity::computePressureTrend() {
 void TempestDashboardActivity::runFetch() {
   DashboardUI::syncClockAndTimezone();
 
-  LOG_INF("TMP", "Listening for Tempest broadcast on UDP %u (up to %lu ms)", TEMPEST_UDP_PORT,
-          UDP_LISTEN_TIMEOUT_MS);
+  LOG_INF("TMP", "Listening for Tempest broadcast on UDP %u (up to %lu ms)", TEMPEST_UDP_PORT, UDP_LISTEN_TIMEOUT_MS);
 
   if (!listenForObservation()) {
     LOG_ERR("TMP", "No Tempest observation received");
@@ -436,7 +435,7 @@ void TempestDashboardActivity::renderDashboard(const char* footerStatusOverride,
   const bool portrait = SETTINGS.lockScreenOrientation == CrossPointSettings::LOCK_ORIENT_PORTRAIT;
   const auto origOrientation = renderer.getOrientation();
   renderer.setOrientation(portrait ? GfxRenderer::Orientation::Portrait
-                                    : GfxRenderer::Orientation::LandscapeCounterClockwise);
+                                   : GfxRenderer::Orientation::LandscapeCounterClockwise);
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
   const int sideMargin = portrait ? 30 : 40;
@@ -482,8 +481,7 @@ void TempestDashboardActivity::renderDashboard(const char* footerStatusOverride,
   tiles[8].label = tr(STR_TEMPEST_ILLUMINANCE);
   snprintf(tiles[9].value, sizeof(tiles[9].value), "%d", static_cast<int>(windLullMph + 0.5f));
   tiles[9].label = tr(STR_TEMPEST_WIND_LULL);
-  DashboardUI::formatCompact(static_cast<uint32_t>(solarRadiationWm2 + 0.5f), tiles[10].value,
-                             sizeof(tiles[10].value));
+  DashboardUI::formatCompact(static_cast<uint32_t>(solarRadiationWm2 + 0.5f), tiles[10].value, sizeof(tiles[10].value));
   tiles[10].label = tr(STR_TEMPEST_SOLAR_RAD);
   if (!pressureTrendValid) {
     snprintf(tiles[11].value, sizeof(tiles[11].value), "-");

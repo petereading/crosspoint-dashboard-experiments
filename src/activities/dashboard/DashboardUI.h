@@ -31,9 +31,9 @@ using BrandIconFn = void (*)(const GfxRenderer& renderer, int x, int y);
 // Draws the shared footer: separator line, brand icon + label (bottom-left),
 // "<updatedPrefix> <lastUpdated>" centered (skipped if lastUpdated is empty),
 // and identity text + battery icon (bottom-right). Landscape coordinates.
-void drawFooter(const GfxRenderer& renderer, const ThemeMetrics& metrics, int pageWidth, int pageHeight,
-                int sideMargin, BrandIconFn drawIcon, const char* brandLabel, const char* updatedPrefix,
-                const char* lastUpdated, const char* identity);
+void drawFooter(const GfxRenderer& renderer, const ThemeMetrics& metrics, int pageWidth, int pageHeight, int sideMargin,
+                BrandIconFn drawIcon, const char* brandLabel, const char* updatedPrefix, const char* lastUpdated,
+                const char* identity);
 
 // Sync the ESP32 internal clock via SNTP (only if not already set) and
 // auto-detect the local UTC offset from the connection's IP (only if the

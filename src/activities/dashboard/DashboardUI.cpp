@@ -114,9 +114,9 @@ void drawStatTile(const GfxRenderer& renderer, int x, int y, const char* value, 
   renderer.drawText(UI_10_FONT_ID, x, y + 40, label);
 }
 
-void drawFooter(const GfxRenderer& renderer, const ThemeMetrics& metrics, int pageWidth, int pageHeight,
-                int sideMargin, BrandIconFn drawIcon, const char* brandLabel, const char* updatedPrefix,
-                const char* lastUpdated, const char* identity) {
+void drawFooter(const GfxRenderer& renderer, const ThemeMetrics& metrics, int pageWidth, int pageHeight, int sideMargin,
+                BrandIconFn drawIcon, const char* brandLabel, const char* updatedPrefix, const char* lastUpdated,
+                const char* identity) {
   // In portrait there isn't room for brand + updated-time + identity + battery
   // on one line, so lay the footer out in two rows: brand/battery on top, the
   // updated stamp and identity below. Landscape keeps the single-line layout.
@@ -254,8 +254,8 @@ void formatUpdatedStamp(char* buf, size_t bufLen) {
 }
 
 namespace {
-constexpr const char* COMPASS[16] = {"N",  "NNE", "NE", "ENE", "E",  "ESE", "SE", "SSE",
-                                     "S",  "SSW", "SW", "WSW", "W",  "WNW", "NW", "NNW"};
+constexpr const char* COMPASS[16] = {"N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+                                     "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"};
 }  // namespace
 
 const char* compassDirection(int degrees) {
@@ -281,8 +281,8 @@ void drawSun(const GfxRenderer& r, int cx, int cy, int discR) {
   for (int a = 0; a < 8; a++) {
     const float ang = static_cast<float>(a) * 3.14159265f / 4.0f;
     const float s = std::sin(ang), c = std::cos(ang);
-    r.drawLine(cx + static_cast<int>(s * inner), cy - static_cast<int>(c * inner),
-               cx + static_cast<int>(s * outer), cy - static_cast<int>(c * outer), rayW, true);
+    r.drawLine(cx + static_cast<int>(s * inner), cy - static_cast<int>(c * inner), cx + static_cast<int>(s * outer),
+               cy - static_cast<int>(c * outer), rayW, true);
   }
 }
 
@@ -364,8 +364,8 @@ void drawWeatherIcon(const GfxRenderer& renderer, WxCategory category, int x, in
       const int n = 3;
       for (int i = 0; i < n; i++) {
         const int inset = (i % 2) * (size * 12 / 100);
-        renderer.fillRect(x + size * 12 / 100 + inset, precipTop + i * std::max(3, size / 14),
-                          size * 76 / 100 - inset, std::max(2, size / 28));
+        renderer.fillRect(x + size * 12 / 100 + inset, precipTop + i * std::max(3, size / 14), size * 76 / 100 - inset,
+                          std::max(2, size / 28));
       }
       break;
     }

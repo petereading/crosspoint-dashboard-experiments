@@ -6,13 +6,12 @@
 #include <WiFi.h>
 #include <esp_sntp.h>
 
-#include <ctime>
-
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
@@ -28,8 +27,8 @@
 #include "network/HttpDownloader.h"
 
 namespace {
-constexpr size_t MAX_CELLS = 400;             // a year is 371 cells; guard against markup changes
-constexpr size_t PARSE_TAIL_KEEP = 200;       // carry-over so tags/phrases can straddle chunk boundaries
+constexpr size_t MAX_CELLS = 400;        // a year is 371 cells; guard against markup changes
+constexpr size_t PARSE_TAIL_KEEP = 200;  // carry-over so tags/phrases can straddle chunk boundaries
 // The heading is "<number>\n contributions\n in the last year" with the parts
 // on separate lines, so anchor on the last part and walk backwards.
 constexpr char CONTRIB_PHRASE[] = "in the last year";
@@ -82,9 +81,8 @@ void GithubDashboardActivity::onExit() {
 
 void GithubDashboardActivity::promptUsername() {
   startActivityForResult(
-      std::make_unique<KeyboardEntryActivity>(renderer, mappedInput, tr(STR_GITHUB_USERNAME),
-                                              SETTINGS.githubUsername, sizeof(SETTINGS.githubUsername) - 1,
-                                              InputType::Text),
+      std::make_unique<KeyboardEntryActivity>(renderer, mappedInput, tr(STR_GITHUB_USERNAME), SETTINGS.githubUsername,
+                                              sizeof(SETTINGS.githubUsername) - 1, InputType::Text),
       [this](const ActivityResult& result) {
         if (result.isCancelled) {
           if (SETTINGS.githubUsername[0] == '\0') {
@@ -233,8 +231,8 @@ void GithubDashboardActivity::runFetch() {
   snprintf(url, sizeof(url), "https://github.com/users/%s/contributions", SETTINGS.githubUsername);
 
   LOG_INF("GH", "Fetching %s", url);
-  const bool ok = HttpDownloader::fetchUrl(
-      std::string(url), [this](const uint8_t* data, size_t len) { return feedHtml(data, len); });
+  const bool ok = HttpDownloader::fetchUrl(std::string(url),
+                                           [this](const uint8_t* data, size_t len) { return feedHtml(data, len); });
   parseBuf.clear();
   parseBuf.shrink_to_fit();
 
@@ -303,8 +301,8 @@ bool GithubDashboardActivity::feedHtml(const uint8_t* data, size_t len) {
       const size_t f = parseBuf.find("contribution-day-component-", next);
       if (f != std::string::npos && f < end) {
         int row = -1, col = -1;
-        if (sscanf(parseBuf.c_str() + f, "contribution-day-component-%d-%d", &row, &col) == 2 && row >= 0 &&
-            row < 7 && col >= 0) {
+        if (sscanf(parseBuf.c_str() + f, "contribution-day-component-%d-%d", &row, &col) == 2 && row >= 0 && row < 7 &&
+            col >= 0) {
           const size_t slot = static_cast<size_t>(col) * 7 + row;
           size_t t = end + 1;
           while (t < textEnd && isspace(static_cast<unsigned char>(parseBuf[t]))) t++;
@@ -410,7 +408,6 @@ void GithubDashboardActivity::exitDashboardMode() {
   }
 }
 
-
 void GithubDashboardActivity::render(RenderLock&&) {
   switch (state) {
     case State::Connecting:
@@ -465,7 +462,7 @@ void GithubDashboardActivity::renderDashboard() const {
   const bool portrait = SETTINGS.lockScreenOrientation == CrossPointSettings::LOCK_ORIENT_PORTRAIT;
   const auto origOrientation = renderer.getOrientation();
   renderer.setOrientation(portrait ? GfxRenderer::Orientation::Portrait
-                                    : GfxRenderer::Orientation::LandscapeCounterClockwise);
+                                   : GfxRenderer::Orientation::LandscapeCounterClockwise);
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
   const int sideMargin = portrait ? 30 : 40;

@@ -14,19 +14,19 @@
 #include <Logging.h>
 #include <SPI.h>
 #include <WiFi.h>
-#include <esp_sleep.h>
 #include <builtinFonts/all.h>
+#include <esp_sleep.h>
 
 #include <cstring>
 
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#include "DashboardSleep.h"
 #include "KOReaderCredentialStore.h"
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
 #include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
-#include "DashboardSleep.h"
 #include "activities/Activity.h"
 #include "activities/ActivityManager.h"
 #include "activities/github/GithubDashboardActivity.h"

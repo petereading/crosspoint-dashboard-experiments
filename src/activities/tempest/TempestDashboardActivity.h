@@ -52,8 +52,8 @@ class TempestDashboardActivity final : public Activity {
   float dewPointF = 0;
   float feelsLikeF = 0;
   float illuminanceLux = 0;
-  int lightningCount = 0;      // strikes in the report interval (0 = none detected)
-  float lightningDistMi = 0;   // average distance to strikes, if any
+  int lightningCount = 0;     // strikes in the report interval (0 = none detected)
+  float lightningDistMi = 0;  // average distance to strikes, if any
   float uvIndex = 0;
   float solarRadiationWm2 = 0;
   int precipType = 0;  // 0 = none, 1 = rain, 2 = hail, 3 = rain+hail

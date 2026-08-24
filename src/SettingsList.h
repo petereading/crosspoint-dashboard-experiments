@@ -107,11 +107,11 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         // this array must stay in SLEEP_SCREEN_MODE value order past index 3.
         // (Indices 4/5 are a known upstream label swap; STR_LOCK_SCREEN is
         // appended last to match LOCK_SCREEN = 7.)
-        SettingInfo::Enum(StrId::STR_SLEEP_SCREEN, &CrossPointSettings::sleepScreen,
-                          {StrId::STR_DARK, StrId::STR_LIGHT, StrId::STR_CUSTOM, StrId::STR_COVER,
-                           StrId::STR_COVER_CUSTOM, StrId::STR_NONE_OPT, StrId::STR_QUICK_RESUME,
-                           StrId::STR_LOCK_SCREEN},
-                          "sleepScreen", StrId::STR_CAT_DISPLAY),
+        SettingInfo::Enum(
+            StrId::STR_SLEEP_SCREEN, &CrossPointSettings::sleepScreen,
+            {StrId::STR_DARK, StrId::STR_LIGHT, StrId::STR_CUSTOM, StrId::STR_COVER, StrId::STR_COVER_CUSTOM,
+             StrId::STR_NONE_OPT, StrId::STR_QUICK_RESUME, StrId::STR_LOCK_SCREEN},
+            "sleepScreen", StrId::STR_CAT_DISPLAY),
         SettingInfo::Enum(StrId::STR_LOCK_SCREEN_TYPE, &CrossPointSettings::sleepLockScreenType,
                           {StrId::STR_GITHUB_DASHBOARD, StrId::STR_WEATHER_DASHBOARD, StrId::STR_TEMPEST_DASHBOARD,
                            StrId::STR_REMOTE_IMAGE_DASHBOARD},
@@ -206,8 +206,8 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         // directly tunable from Settings > System, like Time to Sleep.
         SettingInfo::Value(StrId::STR_GITHUB_REFRESH_INTERVAL, &CrossPointSettings::githubRefreshMinutes, {5, 240, 5},
                            "githubRefreshMinutes", StrId::STR_CAT_SYSTEM),
-        SettingInfo::Value(StrId::STR_WEATHER_REFRESH_INTERVAL, &CrossPointSettings::weatherRefreshMinutes,
-                           {5, 240, 5}, "weatherRefreshMinutes", StrId::STR_CAT_SYSTEM),
+        SettingInfo::Value(StrId::STR_WEATHER_REFRESH_INTERVAL, &CrossPointSettings::weatherRefreshMinutes, {5, 240, 5},
+                           "weatherRefreshMinutes", StrId::STR_CAT_SYSTEM),
         SettingInfo::Value(StrId::STR_TEMPEST_REFRESH_INTERVAL, &CrossPointSettings::tempestRefreshMinutes, {2, 60, 1},
                            "tempestRefreshMinutes", StrId::STR_CAT_SYSTEM),
         SettingInfo::Value(StrId::STR_REMOTE_IMAGE_REFRESH_INTERVAL, &CrossPointSettings::remoteImageRefreshMinutes,
@@ -216,14 +216,14 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                           {StrId::STR_LANDSCAPE, StrId::STR_PORTRAIT}, "lockScreenOrientation", StrId::STR_CAT_SYSTEM),
         // Web/JSON only (edited on-device inside each dashboard itself); the
         // category keeps these out of the four device settings tabs.
-        SettingInfo::String(StrId::STR_GITHUB_USERNAME, SETTINGS.githubUsername,
-                            sizeof(SETTINGS.githubUsername) - 1, "githubUsername", StrId::STR_GITHUB_DASHBOARD),
-        SettingInfo::String(StrId::STR_WEATHER_ZIP, SETTINGS.weatherZip, sizeof(SETTINGS.weatherZip) - 1,
-                            "weatherZip", StrId::STR_WEATHER_DASHBOARD),
+        SettingInfo::String(StrId::STR_GITHUB_USERNAME, SETTINGS.githubUsername, sizeof(SETTINGS.githubUsername) - 1,
+                            "githubUsername", StrId::STR_GITHUB_DASHBOARD),
+        SettingInfo::String(StrId::STR_WEATHER_ZIP, SETTINGS.weatherZip, sizeof(SETTINGS.weatherZip) - 1, "weatherZip",
+                            StrId::STR_WEATHER_DASHBOARD),
         SettingInfo::String(StrId::STR_TEMPEST_LABEL, SETTINGS.tempestLabel, sizeof(SETTINGS.tempestLabel) - 1,
                             "tempestLabel", StrId::STR_TEMPEST_DASHBOARD),
-        SettingInfo::String(StrId::STR_REMOTE_IMAGE_URL, SETTINGS.remoteImageUrl,
-                            sizeof(SETTINGS.remoteImageUrl) - 1, "remoteImageUrl", StrId::STR_REMOTE_IMAGE_DASHBOARD),
+        SettingInfo::String(StrId::STR_REMOTE_IMAGE_URL, SETTINGS.remoteImageUrl, sizeof(SETTINGS.remoteImageUrl) - 1,
+                            "remoteImageUrl", StrId::STR_REMOTE_IMAGE_DASHBOARD),
 
         // --- KOReader Sync (web-only, uses KOReaderCredentialStore) ---
         SettingInfo::DynamicString(

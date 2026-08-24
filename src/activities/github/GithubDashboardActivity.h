@@ -47,8 +47,8 @@ class GithubDashboardActivity final : public Activity {
   static constexpr size_t MAX_SLOTS = 384;
 
   std::vector<ContribCell> cells;
-  std::string totalContributions;  // e.g. "3,640" from the heading (fallback)
-  std::string parseBuf;            // streaming HTML carry-over buffer
+  std::string totalContributions;   // e.g. "3,640" from the heading (fallback)
+  std::string parseBuf;             // streaming HTML carry-over buffer
   uint16_t counts[MAX_SLOTS] = {};  // per-day counts from tool-tips, keyed by table slot (col*7+row)
   bool countsFound = false;
 

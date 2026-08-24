@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <iterator>
 
 #include "CrossPointSettings.h"
 #include "components/UITheme.h"
@@ -64,10 +65,9 @@ constexpr BigGlyph BIG_GLYPHS[] = {
 };
 
 const BigGlyph* findBigGlyph(char c) {
-  for (const auto& g : BIG_GLYPHS) {
-    if (g.ch == c) return &g;
-  }
-  return nullptr;
+  const auto glyph = std::find_if(std::cbegin(BIG_GLYPHS), std::cend(BIG_GLYPHS),
+                                  [c](const BigGlyph& candidate) { return candidate.ch == c; });
+  return glyph == std::cend(BIG_GLYPHS) ? nullptr : glyph;
 }
 }  // namespace
 

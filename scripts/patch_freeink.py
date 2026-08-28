@@ -63,13 +63,15 @@ void Uc8253X3Driver::writeWindowPlane(EpdBus& bus, uint8_t command, const uint8_
                                       uint16_t w, uint16_t h) {
   const uint16_t firstByte = x / 8;
   const uint16_t windowWidthBytes = w / 8;
+  bus.cmd(CMD_PARTIAL_IN);
+  setPartialWindow(bus, x, y, w, h);
   bus.cmd(command);
   bus.beginTxn();
   for (int row = static_cast<int>(y + h) - 1; row >= static_cast<int>(y); row--) {
     bus.rawWriteBytes(fb + static_cast<uint32_t>(row) * _wb + firstByte, windowWidthBytes);
   }
   bus.endTxn();
-  bus.cmd(CMD_DATA_STOP);
+  bus.cmd(CMD_PARTIAL_OUT);
 }
 
 void Uc8253X3Driver::displayWindow(EpdBus& bus, const uint8_t* fb, const uint8_t* prev, uint16_t x, uint16_t y,
@@ -85,16 +87,20 @@ void Uc8253X3Driver::displayWindow(EpdBus& bus, const uint8_t* fb, const uint8_t
   // a normal full cached-dashboard paint immediately before this call.
   if (_inGrayscaleMode || !_redRamSynced || _grayState.lsbValid) return;
 
-  bus.cmd(CMD_PARTIAL_IN);
-  setPartialWindow(bus, x, y, w, h);
+  // Match the controller's proven GxEPD2/OEM ordering: each RAM write is its
+  // own PTIN -> PTL -> DTM -> PTOUT transaction, and the refresh re-enters the
+  // same window before DRF. CMD_DATA_STOP is a full-plane terminator and must
+  // not be emitted for a partial-window transfer.
   writeWindowPlane(bus, CMD_DTM2, fb, x, y, w, h);
   loadBankCdi(bus, 0x29, 0x07, _cfg.fast);
+  bus.cmd(CMD_PARTIAL_IN);
+  setPartialWindow(bus, x, y, w, h);
   triggerRefresh(bus, turnOff);
+  bus.cmd(CMD_PARTIAL_OUT);
 
   // Rebase only the same old-RAM rectangle. This makes a second partial call
   // a true inverse differential update and preserves the rest of both planes.
   writeWindowPlane(bus, CMD_DTM1, fb, x, y, w, h);
-  bus.cmd(CMD_PARTIAL_OUT);
   _redRamSynced = true;
 }
 

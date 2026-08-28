@@ -35,7 +35,7 @@ class RemoteImageDashboardActivity final : public Activity {
   State state = State::Connecting;
   bool wifiUsed = false;
   bool cachedImageAvailable = false;
-  bool powerInputArmed = false;
+  std::atomic<bool> powerInputArmed{false};
   std::atomic<bool> powerExitRequested{false};
   TaskHandle_t powerLatchTask = nullptr;
   unsigned long wifiConnectStart = 0;

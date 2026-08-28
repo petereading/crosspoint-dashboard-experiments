@@ -24,7 +24,11 @@ class RemoteImageDashboardActivity final : public Activity {
 
   static constexpr unsigned long WIFI_TIMEOUT_MS = 45000;
   static constexpr unsigned long DISPLAY_GRACE_INTERACTIVE_MS = 20000;
-  static constexpr uint32_t DOWNLOAD_TASK_STACK_SIZE = 24576;
+  // Remote Image only performs a raw HTTPS download in this worker. Keeping
+  // the worker below the 24 KB Arduino loop stack preserves scarce ESP32-C3
+  // heap for WiFi/TLS while still leaving substantially more headroom than the
+  // stock 8 KB stack that proved insufficient for HTTPS on this device.
+  static constexpr uint32_t DOWNLOAD_TASK_STACK_SIZE = 16384;
   static constexpr const char* IMAGE_PATH = "/.crosspoint/remote-image.bmp";
   static constexpr const char* TEMP_PATH = "/.crosspoint/remote-image.tmp";
   static constexpr const char* BACKUP_PATH = "/.crosspoint/remote-image.bak";

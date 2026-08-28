@@ -243,8 +243,8 @@ void RemoteImageDashboardActivity::startFetchTask() {
   downloadResult.store(static_cast<int>(HttpDownloader::HTTP_ERROR), std::memory_order_release);
 
   LOG_INF("REMOTE", "Starting background dashboard image download");
-  const BaseType_t created = xTaskCreatePinnedToCore(fetchTaskTrampoline, "RemoteImageHttp", DOWNLOAD_TASK_STACK_SIZE,
-                                                     this, 1, nullptr, 0);
+  const BaseType_t created =
+      xTaskCreatePinnedToCore(fetchTaskTrampoline, "RemoteImageHttp", DOWNLOAD_TASK_STACK_SIZE, this, 1, nullptr, 0);
   if (created != pdPASS) {
     LOG_ERR("REMOTE", "Could not create dashboard download task");
     downloadResult.store(static_cast<int>(HttpDownloader::FILE_ERROR), std::memory_order_release);

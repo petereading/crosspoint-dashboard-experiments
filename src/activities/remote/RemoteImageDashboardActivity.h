@@ -1,10 +1,5 @@
 #pragma once
 
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-
-#include <atomic>
-
 #include "activities/Activity.h"
 
 // Generic externally-rendered dashboard. The device only owns transport,
@@ -27,7 +22,6 @@ class RemoteImageDashboardActivity final : public Activity {
 
   static constexpr unsigned long WIFI_TIMEOUT_MS = 45000;
   static constexpr unsigned long DISPLAY_GRACE_INTERACTIVE_MS = 20000;
-  static constexpr uint32_t POWER_LATCH_TASK_STACK_SIZE = 2048;
   static constexpr const char* IMAGE_PATH = "/.crosspoint/remote-image.bmp";
   static constexpr const char* TEMP_PATH = "/.crosspoint/remote-image.tmp";
   static constexpr const char* BACKUP_PATH = "/.crosspoint/remote-image.bak";
@@ -36,9 +30,9 @@ class RemoteImageDashboardActivity final : public Activity {
   State state = State::Connecting;
   bool wifiUsed = false;
   bool cachedImageAvailable = false;
-  std::atomic<bool> powerInputArmed{false};
-  std::atomic<bool> powerExitRequested{false};
-  TaskHandle_t powerLatchTask = nullptr;
+  bool powerInputArmed = false;
+  bool powerExitRequested = false;
+  bool powerInterruptAttached = false;
   unsigned long wifiConnectStart = 0;
   unsigned long sleepAt = 0;
   const char* errorMessage = nullptr;
@@ -49,7 +43,7 @@ class RemoteImageDashboardActivity final : public Activity {
   void runFetch();
   void startPowerLatch();
   void stopPowerLatch();
-  static void powerLatchTaskTrampoline(void* param);
+  bool powerLatchTriggered();
   void returnToUser();
   void goToSleepAndPoll();
   void exitDashboardMode();

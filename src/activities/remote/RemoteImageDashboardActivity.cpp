@@ -1,6 +1,7 @@
 #include "RemoteImageDashboardActivity.h"
 
 #include <Bitmap.h>
+#include <BoardConfig.h>
 #include <GfxRenderer.h>
 #include <HalStorage.h>
 #include <I18n.h>
@@ -64,6 +65,7 @@ void RemoteImageDashboardActivity::onEnter() {
 }
 
 void RemoteImageDashboardActivity::onExit() {
+  stopPowerLatch();
   Activity::onExit();
   if (wifiUsed && WiFi.getMode() != WIFI_MODE_NULL) {
     WiFi.disconnect(false);
@@ -158,6 +160,23 @@ void RemoteImageDashboardActivity::startDirectWifiConnect() {
 }
 
 void RemoteImageDashboardActivity::loop() {
+  if (autoRefresh) {
+    // The press that entered the lock screen may still be held when this
+    // activity starts. Do not interpret that same physical press as an exit;
+    // arm only after it has first been released.
+    if (!powerInputArmed) {
+      if (!mappedInput.isPressed(MappedInputManager::Button::Power)) powerInputArmed = true;
+    } else if (mappedInput.wasPressed(MappedInputManager::Button::Power)) {
+      LOG_INF("REMOTE", "Power pressed during unattended refresh; returning to normal use");
+      powerExitRequested.store(true, std::memory_order_release);
+    }
+
+    if (powerExitRequested.load(std::memory_order_acquire)) {
+      returnToUser();
+      return;
+    }
+  }
+
   switch (state) {
     case State::Connecting:
       if (!autoRefresh) return;
@@ -170,6 +189,10 @@ void RemoteImageDashboardActivity::loop() {
         state = State::Failed;
         errorMessage = tr(STR_DASHBOARD_WIFI_FAILED);
         requestUpdateAndWait();
+        if (powerExitRequested.load(std::memory_order_acquire)) {
+          returnToUser();
+          return;
+        }
         goToSleepAndPoll();
       }
       return;
@@ -186,6 +209,10 @@ void RemoteImageDashboardActivity::loop() {
 
   if (autoRefresh) {
     requestUpdateAndWait();
+    if (powerExitRequested.load(std::memory_order_acquire)) {
+      returnToUser();
+      return;
+    }
     goToSleepAndPoll();
     return;
   }
@@ -207,6 +234,7 @@ void RemoteImageDashboardActivity::loop() {
 
 void RemoteImageDashboardActivity::runFetch() {
   Storage.mkdir("/.crosspoint");
+  if (autoRefresh) startPowerLatch();
 
   LOG_INF("REMOTE", "Downloading configured dashboard image");
   const auto downloadResult = HttpDownloader::downloadToFile(SETTINGS.remoteImageUrl, TEMP_PATH);
@@ -227,15 +255,80 @@ void RemoteImageDashboardActivity::runFetch() {
     state = State::Showing;
   }
 
+  if (autoRefresh && powerExitRequested.load(std::memory_order_acquire)) {
+    returnToUser();
+    return;
+  }
+
   requestUpdateAndWait();
   if (autoRefresh) {
+    if (powerExitRequested.load(std::memory_order_acquire)) {
+      returnToUser();
+      return;
+    }
+    stopPowerLatch();
     goToSleepAndPoll();
   } else if (state == State::Showing) {
     sleepAt = millis() + DISPLAY_GRACE_INTERACTIVE_MS;
   }
 }
 
+void RemoteImageDashboardActivity::startPowerLatch() {
+  if (!autoRefresh || powerLatchTask) return;
+
+  powerExitRequested.store(false, std::memory_order_release);
+  const BaseType_t created = xTaskCreatePinnedToCore(powerLatchTaskTrampoline, "RemotePwrLatch",
+                                                     POWER_LATCH_TASK_STACK_SIZE, this, 2, &powerLatchTask, 0);
+  if (created != pdPASS) {
+    powerLatchTask = nullptr;
+    LOG_ERR("REMOTE", "Could not start power-button latch task");
+  }
+}
+
+void RemoteImageDashboardActivity::stopPowerLatch() {
+  if (!powerLatchTask) return;
+  const TaskHandle_t task = powerLatchTask;
+  powerLatchTask = nullptr;
+  vTaskDelete(task);
+}
+
+void RemoteImageDashboardActivity::powerLatchTaskTrampoline(void* param) {
+  auto* self = static_cast<RemoteImageDashboardActivity*>(param);
+  const auto& input = BoardConfig::ACTIVE.input;
+  const int activeLevel = input.powerActiveHigh ? HIGH : LOW;
+  bool armed = false;
+
+  for (;;) {
+    const bool pressed = digitalRead(input.power) == activeLevel;
+    if (!armed) {
+      // Ignore the original sleep gesture if it is still held when the
+      // synchronous HTTPS operation begins. A new press is valid only after a
+      // release has first been observed.
+      if (!pressed) armed = true;
+    } else if (pressed) {
+      self->powerExitRequested.store(true, std::memory_order_release);
+    }
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+}
+
+void RemoteImageDashboardActivity::returnToUser() {
+  stopPowerLatch();
+  if (Storage.exists(TEMP_PATH)) Storage.remove(TEMP_PATH);
+  exitDashboardMode();
+
+  // Match a normal power-button wake from dashboard sleep: return to the book
+  // when sleep began in the reader, otherwise return home. The silent restart
+  // also clears WiFi/TLS heap fragmentation before normal use resumes.
+  if (APP_STATE.lastSleepFromReader && !APP_STATE.openEpubPath.empty()) {
+    silentRestartToReader();
+  } else {
+    silentRestart();
+  }
+}
+
 void RemoteImageDashboardActivity::goToSleepAndPoll() {
+  stopPowerLatch();
   APP_STATE.activeDashboardMode = CrossPointState::DASHBOARD_REMOTE_IMAGE;
   APP_STATE.saveToFile();
   const uint32_t intervalS = SETTINGS.remoteImageRefreshMinutes * 60u;

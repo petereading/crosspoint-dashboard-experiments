@@ -276,7 +276,6 @@ void RemoteImageDashboardActivity::runFetch() {
 void RemoteImageDashboardActivity::startPowerLatch() {
   if (!autoRefresh || powerLatchTask) return;
 
-  powerExitRequested.store(false, std::memory_order_release);
   const BaseType_t created = xTaskCreatePinnedToCore(powerLatchTaskTrampoline, "RemotePwrLatch",
                                                      POWER_LATCH_TASK_STACK_SIZE, this, 2, &powerLatchTask, 0);
   if (created != pdPASS) {
@@ -296,7 +295,7 @@ void RemoteImageDashboardActivity::powerLatchTaskTrampoline(void* param) {
   auto* self = static_cast<RemoteImageDashboardActivity*>(param);
   const auto& input = BoardConfig::ACTIVE.input;
   const int activeLevel = input.powerActiveHigh ? HIGH : LOW;
-  bool armed = false;
+  bool armed = self->powerInputArmed;
 
   for (;;) {
     const bool pressed = digitalRead(input.power) == activeLevel;

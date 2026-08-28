@@ -4,6 +4,7 @@
 #include <Bitmap.h>
 #include <BoardConfig.h>
 #include <GfxRenderer.h>
+#include <HalGPIO.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Logging.h>
@@ -40,6 +41,7 @@ void RemoteImageDashboardActivity::onEnter() {
 
   powerInputArmed = false;
   powerExitRequested = false;
+  partialRefreshTestPending = autoRefresh && gpio.deviceIsX3();
   if (autoRefresh) startPowerLatch();
 
   recoverInterruptedSwap();
@@ -456,9 +458,47 @@ bool RemoteImageDashboardActivity::renderCachedImage() const {
   renderer.clearScreen();
   renderer.drawBitmap(bitmap, x, y, pageWidth, pageHeight);
   renderer.displayBuffer(HalDisplay::FULL_REFRESH);
+  runPartialRefreshTest();
   renderer.setOrientation(originalOrientation);
   file.close();
   return true;
+}
+
+void RemoteImageDashboardActivity::runPartialRefreshTest() const {
+  if (!partialRefreshTestPending) return;
+  partialRefreshTestPending = false;
+
+  // Standalone X3 hardware experiment: prove that the UC8253 can update a
+  // small RAM window without repainting the cached dashboard or involving the
+  // synchronous HTTPS path. The background bytes are restored exactly before
+  // the second partial update.
+  constexpr int DOT_WINDOW_SIZE = 24;
+  constexpr int DOT_MARGIN = 12;
+  constexpr unsigned long DOT_HOLD_MS = 1000;
+  constexpr size_t MAX_SAVED_BYTES = 128;
+  const int dotX = renderer.getScreenWidth() - DOT_MARGIN - DOT_WINDOW_SIZE;
+  const int dotY = DOT_MARGIN;
+  const size_t savedSize = renderer.getRegionByteSize(dotX, dotY, DOT_WINDOW_SIZE, DOT_WINDOW_SIZE);
+  std::array<uint8_t, MAX_SAVED_BYTES> saved = {};
+  if (savedSize == 0 || savedSize > saved.size() ||
+      !renderer.copyRegionToBuffer(dotX, dotY, DOT_WINDOW_SIZE, DOT_WINDOW_SIZE, saved.data(), saved.size())) {
+    LOG_ERR("REMOTE", "Could not save busy-dot partial window");
+    return;
+  }
+
+  LOG_INF("REMOTE", "X3 partial test: showing %dx%d busy dot", DOT_WINDOW_SIZE, DOT_WINDOW_SIZE);
+  renderer.fillRect(dotX, dotY, DOT_WINDOW_SIZE, DOT_WINDOW_SIZE, false);
+  renderer.fillRoundedRect(dotX + 4, dotY + 4, DOT_WINDOW_SIZE - 8, DOT_WINDOW_SIZE - 8, (DOT_WINDOW_SIZE - 8) / 2,
+                           Color::Black);
+  renderer.displayWindow(dotX, dotY, DOT_WINDOW_SIZE, DOT_WINDOW_SIZE);
+  delay(DOT_HOLD_MS);
+
+  if (!renderer.copyBufferToRegion(dotX, dotY, DOT_WINDOW_SIZE, DOT_WINDOW_SIZE, saved.data(), savedSize)) {
+    LOG_ERR("REMOTE", "Could not restore busy-dot partial window");
+    return;
+  }
+  renderer.displayWindow(dotX, dotY, DOT_WINDOW_SIZE, DOT_WINDOW_SIZE);
+  LOG_INF("REMOTE", "X3 partial test: busy dot removed");
 }
 
 void RemoteImageDashboardActivity::renderMessage(const char* message) const {

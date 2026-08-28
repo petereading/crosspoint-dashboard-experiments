@@ -39,6 +39,10 @@ class HalDisplay {
                             bool fromProgmem = false) const;
 
   void displayBuffer(RefreshMode mode = RefreshMode::FAST_REFRESH, bool turnOffScreen = false);
+  // Update only a byte-aligned rectangular panel window from the framebuffer.
+  // The X3 implementation uses UC8253 PTIN/PTL and differential DTM RAM; this
+  // is a genuine panel partial update rather than a cropped full-frame paint.
+  void displayWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h, bool turnOffScreen = false);
   void refreshDisplay(RefreshMode mode = RefreshMode::FAST_REFRESH, bool turnOffScreen = false);
 
   // Power management

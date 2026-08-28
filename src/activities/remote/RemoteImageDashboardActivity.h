@@ -33,6 +33,7 @@ class RemoteImageDashboardActivity final : public Activity {
   bool powerInputArmed = false;
   bool powerExitRequested = false;
   bool powerInterruptAttached = false;
+  mutable bool partialRefreshTestPending = false;
   unsigned long wifiConnectStart = 0;
   unsigned long sleepAt = 0;
   const char* errorMessage = nullptr;
@@ -52,5 +53,6 @@ class RemoteImageDashboardActivity final : public Activity {
   bool validateImageFile(const char* path) const;
   bool promoteDownloadedImage();
   bool renderCachedImage() const;
+  void runPartialRefreshTest() const;
   void renderMessage(const char* message) const;
 };

@@ -33,6 +33,16 @@ void RemoteImageDashboardActivity::onEnter() {
   recoverInterruptedSwap();
   cachedImageAvailable = validateImageFile(IMAGE_PATH);
 
+  // When Remote Image is entered as the configured sleep screen, paint the
+  // last known-good dashboard immediately instead of replacing the reader page
+  // with a blocking "Downloading image..." screen. A timer wake already has
+  // the cached dashboard retained on the e-ink panel, so avoid needlessly
+  // repainting the same image before the scheduled refresh begins.
+  if (autoRefresh && cachedImageAvailable &&
+      APP_STATE.activeDashboardMode != CrossPointState::DASHBOARD_REMOTE_IMAGE) {
+    requestUpdate();
+  }
+
   if (SETTINGS.remoteImageUrl[0] == '\0') {
     if (autoRefresh) {
       state = State::Failed;
@@ -310,7 +320,12 @@ void RemoteImageDashboardActivity::render(RenderLock&&) {
   switch (state) {
     case State::Connecting:
     case State::Fetching:
-      renderMessage(tr(STR_REMOTE_IMAGE_UPDATING));
+      // During unattended sleep-screen refreshes, leave the last known-good
+      // dashboard visible while WiFi and HTTPS run. Only first use (no cache)
+      // needs the explicit updating screen.
+      if (!autoRefresh || !cachedImageAvailable || !renderCachedImage()) {
+        renderMessage(tr(STR_REMOTE_IMAGE_UPDATING));
+      }
       break;
     case State::Failed:
       if (!cachedImageAvailable || !renderCachedImage()) {

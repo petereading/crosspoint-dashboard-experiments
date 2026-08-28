@@ -6,8 +6,6 @@
 #include <I18n.h>
 #include <Logging.h>
 #include <WiFi.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
 
 #include <algorithm>
 #include <array>
@@ -22,6 +20,7 @@
 #include "RemoteImageValidation.h"
 #include "SilentRestart.h"
 #include "WifiCredentialStore.h"
+#include "activities/dashboard/DashboardUI.h"
 #include "activities/network/WifiSelectionActivity.h"
 #include "activities/util/KeyboardEntryActivity.h"
 #include "components/UITheme.h"
@@ -40,14 +39,14 @@ void RemoteImageDashboardActivity::onEnter() {
   // the cached dashboard retained on the e-ink panel, so avoid needlessly
   // repainting the same image before the scheduled refresh begins.
   if (autoRefresh && cachedImageAvailable && APP_STATE.activeDashboardMode != CrossPointState::DASHBOARD_REMOTE_IMAGE) {
-    queueRender(false);
+    requestUpdate();
   }
 
   if (SETTINGS.remoteImageUrl[0] == '\0') {
     if (autoRefresh) {
       state = State::Failed;
       errorMessage = tr(STR_REMOTE_IMAGE_HTTPS_REQUIRED);
-      queueRender(true);
+      requestUpdate();
       return;
     }
     promptUrl();
@@ -57,11 +56,7 @@ void RemoteImageDashboardActivity::onEnter() {
   if (!RemoteImageValidation::isHttpsUrl(SETTINGS.remoteImageUrl)) {
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_HTTPS_REQUIRED);
-    if (autoRefresh) {
-      queueRender(true);
-    } else {
-      requestUpdate();
-    }
+    requestUpdate();
     return;
   }
 
@@ -117,8 +112,6 @@ void RemoteImageDashboardActivity::beginUpdate() {
   state = State::Connecting;
   errorMessage = nullptr;
   sleepAt = 0;
-  downloadStarted = false;
-  downloadDone.store(false, std::memory_order_release);
 
   if (WiFi.status() == WL_CONNECTED) {
     state = State::Fetching;
@@ -155,7 +148,6 @@ void RemoteImageDashboardActivity::startDirectWifiConnect() {
     LOG_ERR("REMOTE", "No saved WiFi network for unattended refresh");
     state = State::Failed;
     errorMessage = tr(STR_DASHBOARD_WIFI_FAILED);
-    queueRender(true);
     return;
   }
 
@@ -166,27 +158,6 @@ void RemoteImageDashboardActivity::startDirectWifiConnect() {
 }
 
 void RemoteImageDashboardActivity::loop() {
-  if (autoRefresh && mappedInput.wasPressed(MappedInputManager::Button::Power)) {
-    LOG_INF("REMOTE", "Power pressed during unattended refresh; returning to normal use");
-    exitRequested = true;
-  }
-
-  serviceRenderState();
-
-  // Never destroy this activity while its HTTPS task is still using its state.
-  // A power press is remembered immediately and acted on as soon as the current
-  // download/render operation reaches a safe boundary.
-  if (exitRequested) {
-    if (!renderPending && (!downloadStarted || downloadDone.load(std::memory_order_acquire))) {
-      returnToUser();
-    }
-    return;
-  }
-
-  // A final refresh is already being painted. Keep pumping the main loop so
-  // the power button remains observable, but do not start any more work.
-  if (renderPending && sleepAfterRender) return;
-
   switch (state) {
     case State::Connecting:
       if (!autoRefresh) return;
@@ -198,17 +169,14 @@ void RemoteImageDashboardActivity::loop() {
         LOG_ERR("REMOTE", "Unattended WiFi connect timed out");
         state = State::Failed;
         errorMessage = tr(STR_DASHBOARD_WIFI_FAILED);
-        queueRender(true);
+        requestUpdateAndWait();
+        goToSleepAndPoll();
       }
       return;
 
     case State::Fetching:
-      if (!downloadStarted) {
-        startFetchTask();
-        return;
-      }
-      if (!downloadDone.load(std::memory_order_acquire)) return;
-      processFetchResult();
+      if (!autoRefresh) requestUpdateAndWait();
+      runFetch();
       return;
 
     case State::Showing:
@@ -217,7 +185,8 @@ void RemoteImageDashboardActivity::loop() {
   }
 
   if (autoRefresh) {
-    queueRender(true);
+    requestUpdateAndWait();
+    goToSleepAndPoll();
     return;
   }
 
@@ -236,36 +205,13 @@ void RemoteImageDashboardActivity::loop() {
   }
 }
 
-void RemoteImageDashboardActivity::startFetchTask() {
+void RemoteImageDashboardActivity::runFetch() {
   Storage.mkdir("/.crosspoint");
-  downloadStarted = true;
-  downloadDone.store(false, std::memory_order_release);
-  downloadResult.store(static_cast<int>(HttpDownloader::HTTP_ERROR), std::memory_order_release);
 
-  LOG_INF("REMOTE", "Starting background dashboard image download");
-  const BaseType_t created =
-      xTaskCreatePinnedToCore(fetchTaskTrampoline, "RemoteImageHttp", DOWNLOAD_TASK_STACK_SIZE, this, 1, nullptr, 0);
-  if (created != pdPASS) {
-    LOG_ERR("REMOTE", "Could not create dashboard download task");
-    downloadResult.store(static_cast<int>(HttpDownloader::FILE_ERROR), std::memory_order_release);
-    downloadDone.store(true, std::memory_order_release);
-  }
-}
-
-void RemoteImageDashboardActivity::fetchTaskTrampoline(void* param) {
-  auto* self = static_cast<RemoteImageDashboardActivity*>(param);
-  const auto result = HttpDownloader::downloadToFile(SETTINGS.remoteImageUrl, TEMP_PATH);
-  self->downloadResult.store(static_cast<int>(result), std::memory_order_release);
-  self->downloadDone.store(true, std::memory_order_release);
-  vTaskDelete(nullptr);
-}
-
-void RemoteImageDashboardActivity::processFetchResult() {
-  const auto result = static_cast<HttpDownloader::DownloadError>(downloadResult.load(std::memory_order_acquire));
-  downloadStarted = false;
-
-  if (result != HttpDownloader::OK) {
-    LOG_ERR("REMOTE", "Image download failed: %d", static_cast<int>(result));
+  LOG_INF("REMOTE", "Downloading configured dashboard image");
+  const auto downloadResult = HttpDownloader::downloadToFile(SETTINGS.remoteImageUrl, TEMP_PATH);
+  if (downloadResult != HttpDownloader::OK) {
+    LOG_ERR("REMOTE", "Image download failed: %d", static_cast<int>(downloadResult));
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_FETCH_FAILED);
   } else if (!validateImageFile(TEMP_PATH)) {
@@ -281,75 +227,11 @@ void RemoteImageDashboardActivity::processFetchResult() {
     state = State::Showing;
   }
 
+  requestUpdateAndWait();
   if (autoRefresh) {
-    queueRender(true);
-  } else {
-    requestUpdateAndWait();
-    if (state == State::Showing) sleepAt = millis() + DISPLAY_GRACE_INTERACTIVE_MS;
-  }
-}
-
-void RemoteImageDashboardActivity::queueRender(bool sleepAfter) {
-  if (!autoRefresh) {
-    requestUpdate();
-    return;
-  }
-
-  // If the initial cached-image paint is still underway when the network fetch
-  // completes, wait for it to finish and then queue the fresh-image paint.
-  // This avoids racing two full e-ink refreshes while still letting network I/O
-  // overlap the first paint.
-  if (renderPending) {
-    if (sleepAfter) finalRenderNeeded = true;
-    return;
-  }
-
-  renderPending = true;
-  renderSeenBusy = false;
-  sleepAfterRender = sleepAfter;
-  requestUpdate(true);
-}
-
-void RemoteImageDashboardActivity::serviceRenderState() {
-  if (!renderPending) return;
-
-  const bool busy = RenderLock::peek();
-  if (busy) {
-    renderSeenBusy = true;
-    return;
-  }
-  if (!renderSeenBusy) return;
-
-  renderPending = false;
-  renderSeenBusy = false;
-  const bool completedSleepRender = sleepAfterRender;
-  sleepAfterRender = false;
-
-  if (exitRequested) {
-    returnToUser();
-    return;
-  }
-
-  if (finalRenderNeeded) {
-    finalRenderNeeded = false;
-    queueRender(true);
-    return;
-  }
-
-  if (completedSleepRender) goToSleepAndPoll();
-}
-
-void RemoteImageDashboardActivity::returnToUser() {
-  if (Storage.exists(TEMP_PATH)) Storage.remove(TEMP_PATH);
-  exitDashboardMode();
-
-  // Match a normal non-timer wake from dashboard deep sleep: return to the
-  // book when sleep began in the reader, otherwise return home. A silent
-  // restart also clears WiFi/TLS heap fragmentation before normal use resumes.
-  if (APP_STATE.lastSleepFromReader && !APP_STATE.openEpubPath.empty()) {
-    silentRestartToReader();
-  } else {
-    silentRestart();
+    goToSleepAndPoll();
+  } else if (state == State::Showing) {
+    sleepAt = millis() + DISPLAY_GRACE_INTERACTIVE_MS;
   }
 }
 

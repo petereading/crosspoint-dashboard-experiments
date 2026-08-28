@@ -38,8 +38,7 @@ void RemoteImageDashboardActivity::onEnter() {
   // with a blocking "Downloading image..." screen. A timer wake already has
   // the cached dashboard retained on the e-ink panel, so avoid needlessly
   // repainting the same image before the scheduled refresh begins.
-  if (autoRefresh && cachedImageAvailable &&
-      APP_STATE.activeDashboardMode != CrossPointState::DASHBOARD_REMOTE_IMAGE) {
+  if (autoRefresh && cachedImageAvailable && APP_STATE.activeDashboardMode != CrossPointState::DASHBOARD_REMOTE_IMAGE) {
     requestUpdate();
   }
 

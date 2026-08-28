@@ -1,7 +1,5 @@
 #pragma once
 
-#include <atomic>
-
 #include "activities/Activity.h"
 
 // Generic externally-rendered dashboard. The device only owns transport,
@@ -16,7 +14,7 @@ class RemoteImageDashboardActivity final : public Activity {
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
-  bool skipLoopDelay() override { return state == State::Connecting || state == State::Fetching || renderPending; }
+  bool skipLoopDelay() override { return state == State::Connecting || state == State::Fetching; }
   bool preventAutoSleep() override { return autoRefresh || state != State::Failed; }
 
  private:
@@ -24,11 +22,6 @@ class RemoteImageDashboardActivity final : public Activity {
 
   static constexpr unsigned long WIFI_TIMEOUT_MS = 45000;
   static constexpr unsigned long DISPLAY_GRACE_INTERACTIVE_MS = 20000;
-  // Remote Image only performs a raw HTTPS download in this worker. Keeping
-  // the worker below the 24 KB Arduino loop stack preserves scarce ESP32-C3
-  // heap for WiFi/TLS while still leaving substantially more headroom than the
-  // stock 8 KB stack that proved insufficient for HTTPS on this device.
-  static constexpr uint32_t DOWNLOAD_TASK_STACK_SIZE = 16384;
   static constexpr const char* IMAGE_PATH = "/.crosspoint/remote-image.bmp";
   static constexpr const char* TEMP_PATH = "/.crosspoint/remote-image.tmp";
   static constexpr const char* BACKUP_PATH = "/.crosspoint/remote-image.bak";
@@ -37,14 +30,6 @@ class RemoteImageDashboardActivity final : public Activity {
   State state = State::Connecting;
   bool wifiUsed = false;
   bool cachedImageAvailable = false;
-  bool exitRequested = false;
-  bool downloadStarted = false;
-  bool renderPending = false;
-  bool renderSeenBusy = false;
-  bool sleepAfterRender = false;
-  bool finalRenderNeeded = false;
-  std::atomic<bool> downloadDone{false};
-  std::atomic<int> downloadResult{0};
   unsigned long wifiConnectStart = 0;
   unsigned long sleepAt = 0;
   const char* errorMessage = nullptr;
@@ -52,12 +37,7 @@ class RemoteImageDashboardActivity final : public Activity {
   void promptUrl();
   void beginUpdate();
   void startDirectWifiConnect();
-  void startFetchTask();
-  static void fetchTaskTrampoline(void* param);
-  void processFetchResult();
-  void queueRender(bool sleepAfter);
-  void serviceRenderState();
-  void returnToUser();
+  void runFetch();
   void goToSleepAndPoll();
   void exitDashboardMode();
 

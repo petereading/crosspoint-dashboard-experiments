@@ -206,7 +206,6 @@ void RemoteImageDashboardActivity::loop() {
 }
 
 void RemoteImageDashboardActivity::runFetch() {
-  DashboardUI::syncClockAndTimezone();
   Storage.mkdir("/.crosspoint");
 
   LOG_INF("REMOTE", "Downloading configured dashboard image");

@@ -164,8 +164,10 @@ void RemoteImageDashboardActivity::loop() {
     // The press that entered the lock screen may still be held when this
     // activity starts. Do not interpret that same physical press as an exit;
     // arm only after it has first been released.
-    if (!powerInputArmed) {
-      if (!mappedInput.isPressed(MappedInputManager::Button::Power)) powerInputArmed = true;
+    if (!powerInputArmed.load(std::memory_order_acquire)) {
+      if (!mappedInput.isPressed(MappedInputManager::Button::Power)) {
+        powerInputArmed.store(true, std::memory_order_release);
+      }
     } else if (mappedInput.wasPressed(MappedInputManager::Button::Power)) {
       LOG_INF("REMOTE", "Power pressed during unattended refresh; returning to normal use");
       powerExitRequested.store(true, std::memory_order_release);
@@ -295,7 +297,7 @@ void RemoteImageDashboardActivity::powerLatchTaskTrampoline(void* param) {
   auto* self = static_cast<RemoteImageDashboardActivity*>(param);
   const auto& input = BoardConfig::ACTIVE.input;
   const int activeLevel = input.powerActiveHigh ? HIGH : LOW;
-  bool armed = self->powerInputArmed;
+  bool armed = self->powerInputArmed.load(std::memory_order_acquire);
 
   for (;;) {
     const bool pressed = digitalRead(input.power) == activeLevel;

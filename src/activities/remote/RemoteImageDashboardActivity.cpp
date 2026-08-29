@@ -293,14 +293,14 @@ bool RemoteImageDashboardActivity::startFetchWorker() {
 
 void RemoteImageDashboardActivity::fetchWorkerRun(ActivityWorker& worker, void* context) {
   auto* activity = static_cast<RemoteImageDashboardActivity*>(context);
-  const auto result = activity->downloadDashboardImage(worker);
+  const auto result = activity->downloadDashboardImage(&worker);
   LOG_INF("REMOTE", "Fetch worker completed (%d), minimum stack reserve %u bytes", static_cast<int>(result),
           static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
   activity->fetchResult.store(result, std::memory_order_release);
 }
 
 void RemoteImageDashboardActivity::handleFetchResult() {
-  const auto downloadResult = fetchResult.load(std::memory_order_acquire);
+  auto downloadResult = fetchResult.load(std::memory_order_acquire);
   if (!fetchWorker.reset()) {
     LOG_ERR("REMOTE", "Fetch completion observed while worker is still running");
     return;
@@ -310,6 +310,16 @@ void RemoteImageDashboardActivity::handleFetchResult() {
     LOG_INF("REMOTE", "Dashboard download cancelled by power button");
     returnToUser();
     return;
+  }
+
+  // Keep the known-good synchronous path as a diagnostic safety net while the
+  // new worker is being proven on physical X3 hardware. A worker-specific
+  // failure must not strand the lock screen on its old cached image. The
+  // power-button ISR remains part of the downloader cancellation callback, so
+  // unattended fallback socket operations are still bounded to three seconds.
+  if (downloadResult != HttpDownloader::OK && downloadResult != HttpDownloader::ABORTED) {
+    LOG_ERR("REMOTE", "Worker fetch failed (%d); retrying on main task", static_cast<int>(downloadResult));
+    downloadResult = downloadDashboardImage(nullptr);
   }
 
   // Exclude rendering while validating and atomically promoting the temp file:
@@ -351,9 +361,9 @@ void RemoteImageDashboardActivity::handleFetchResult() {
   }
 }
 
-HttpDownloader::DownloadError RemoteImageDashboardActivity::downloadDashboardImage(const ActivityWorker& worker) {
+HttpDownloader::DownloadError RemoteImageDashboardActivity::downloadDashboardImage(const ActivityWorker* worker) {
   const unsigned long fetchStartedAt = millis();
-  const auto cancelled = [this, &worker]() { return fetchCancellationRequested(worker); };
+  const auto cancelled = [this, worker]() { return fetchCancellationRequested(worker); };
   const auto remainingBudget = [&]() -> unsigned long {
     const unsigned long elapsed = millis() - fetchStartedAt;
     return elapsed < FETCH_TOTAL_TIMEOUT_MS ? FETCH_TOTAL_TIMEOUT_MS - elapsed : 0;
@@ -383,7 +393,7 @@ HttpDownloader::DownloadError RemoteImageDashboardActivity::downloadDashboardIma
   return fetchOnce(retryBudget);
 }
 
-bool RemoteImageDashboardActivity::reconnectWifiForRetry(unsigned long timeoutMs, const ActivityWorker& worker) {
+bool RemoteImageDashboardActivity::reconnectWifiForRetry(unsigned long timeoutMs, const ActivityWorker* worker) {
   const std::string lastSsid = WIFI_STORE.getLastConnectedSsid();
   const WifiCredential* cred = lastSsid.empty() ? nullptr : WIFI_STORE.findCredential(lastSsid);
   if (!cred) return false;
@@ -401,8 +411,8 @@ bool RemoteImageDashboardActivity::reconnectWifiForRetry(unsigned long timeoutMs
   return WiFi.status() == WL_CONNECTED;
 }
 
-bool RemoteImageDashboardActivity::fetchCancellationRequested(const ActivityWorker& worker) const {
-  return worker.cancelRequested() || (autoRefresh && remotePowerInterruptFired != 0);
+bool RemoteImageDashboardActivity::fetchCancellationRequested(const ActivityWorker* worker) const {
+  return (worker && worker->cancelRequested()) || (autoRefresh && remotePowerInterruptFired != 0);
 }
 
 void RemoteImageDashboardActivity::startPowerLatch() {

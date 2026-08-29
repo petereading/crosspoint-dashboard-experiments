@@ -59,9 +59,9 @@ class RemoteImageDashboardActivity final : public Activity {
   bool startFetchWorker();
   static void fetchWorkerRun(ActivityWorker& worker, void* context);
   void handleFetchResult();
-  HttpDownloader::DownloadError downloadDashboardImage(const ActivityWorker& worker);
-  bool reconnectWifiForRetry(unsigned long timeoutMs, const ActivityWorker& worker);
-  bool fetchCancellationRequested(const ActivityWorker& worker) const;
+  HttpDownloader::DownloadError downloadDashboardImage(const ActivityWorker* worker);
+  bool reconnectWifiForRetry(unsigned long timeoutMs, const ActivityWorker* worker);
+  bool fetchCancellationRequested(const ActivityWorker* worker) const;
   void startPowerLatch();
   void stopPowerLatch();
   bool powerLatchTriggered();

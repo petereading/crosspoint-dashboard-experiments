@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <string>
@@ -28,6 +29,7 @@
 #include "activities/util/KeyboardEntryActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
+#include "images/Logo120.h"
 #include "network/HttpDownloader.h"
 
 namespace {
@@ -45,7 +47,7 @@ void RemoteImageDashboardActivity::onEnter() {
   if (autoRefresh) startPowerLatch();
 
   recoverInterruptedSwap();
-  cachedImageAvailable = validateImageFile(IMAGE_PATH);
+  cachedImageAvailable = validateImageFile(imagePath());
 
   // When Remote Image is entered as the configured sleep screen, paint the
   // last known-good dashboard immediately instead of replacing the reader page
@@ -55,11 +57,11 @@ void RemoteImageDashboardActivity::onEnter() {
   // before that new image reaches the panel. A timer wake already has the
   // cached dashboard retained on the e-ink panel, so avoid needlessly
   // repainting the same image before the scheduled refresh begins.
-  if (autoRefresh && cachedImageAvailable && APP_STATE.activeDashboardMode != CrossPointState::DASHBOARD_REMOTE_IMAGE) {
+  if (autoRefresh && cachedImageAvailable && APP_STATE.activeDashboardMode != activeDashboardMode()) {
     requestUpdateAndWait();
   }
 
-  if (SETTINGS.remoteImageUrl[0] == '\0') {
+  if (configuredUrl()[0] == '\0') {
     if (autoRefresh) {
       state = State::Failed;
       errorMessage = tr(STR_REMOTE_IMAGE_HTTPS_REQUIRED);
@@ -70,7 +72,7 @@ void RemoteImageDashboardActivity::onEnter() {
     return;
   }
 
-  if (!RemoteImageValidation::isHttpsUrl(SETTINGS.remoteImageUrl)) {
+  if (!RemoteImageValidation::isHttpsUrl(dashboardUrl())) {
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_HTTPS_REQUIRED);
     requestUpdate();
@@ -91,39 +93,39 @@ void RemoteImageDashboardActivity::onExit() {
 }
 
 void RemoteImageDashboardActivity::promptUrl() {
-  startActivityForResult(
-      std::make_unique<KeyboardEntryActivity>(renderer, mappedInput, tr(STR_REMOTE_IMAGE_URL), SETTINGS.remoteImageUrl,
-                                              sizeof(SETTINGS.remoteImageUrl) - 1, InputType::Url),
-      [this](const ActivityResult& result) {
-        if (result.isCancelled) {
-          if (SETTINGS.remoteImageUrl[0] == '\0') {
-            finish();
-          } else {
-            if (state == State::Showing) sleepAt = millis() + DISPLAY_GRACE_INTERACTIVE_MS;
-            requestUpdate();
-          }
-          return;
-        }
+  char* urlBuffer = configuredUrlBuffer();
+  startActivityForResult(std::make_unique<KeyboardEntryActivity>(renderer, mappedInput, urlLabel(), urlBuffer,
+                                                                 configuredUrlCapacity() - 1, InputType::Url),
+                         [this, urlBuffer](const ActivityResult& result) {
+                           if (result.isCancelled) {
+                             if (urlBuffer[0] == '\0') {
+                               finish();
+                             } else {
+                               if (state == State::Showing) sleepAt = millis() + DISPLAY_GRACE_INTERACTIVE_MS;
+                               requestUpdate();
+                             }
+                             return;
+                           }
 
-        const auto& kb = std::get<KeyboardResult>(result.data);
-        if (kb.text.empty()) {
-          SETTINGS.remoteImageUrl[0] = '\0';
-          SETTINGS.saveToFile();
-          finish();
-          return;
-        }
-        if (!RemoteImageValidation::isHttpsUrl(kb.text)) {
-          state = State::Failed;
-          errorMessage = tr(STR_REMOTE_IMAGE_HTTPS_REQUIRED);
-          requestUpdate();
-          return;
-        }
+                           const auto& kb = std::get<KeyboardResult>(result.data);
+                           if (kb.text.empty()) {
+                             urlBuffer[0] = '\0';
+                             SETTINGS.saveToFile();
+                             finish();
+                             return;
+                           }
+                           if (!RemoteImageValidation::isHttpsUrl(kb.text)) {
+                             state = State::Failed;
+                             errorMessage = tr(STR_REMOTE_IMAGE_HTTPS_REQUIRED);
+                             requestUpdate();
+                             return;
+                           }
 
-        strncpy(SETTINGS.remoteImageUrl, kb.text.c_str(), sizeof(SETTINGS.remoteImageUrl) - 1);
-        SETTINGS.remoteImageUrl[sizeof(SETTINGS.remoteImageUrl) - 1] = '\0';
-        SETTINGS.saveToFile();
-        beginUpdate();
-      });
+                           strncpy(urlBuffer, kb.text.c_str(), configuredUrlCapacity() - 1);
+                           urlBuffer[configuredUrlCapacity() - 1] = '\0';
+                           SETTINGS.saveToFile();
+                           beginUpdate();
+                         });
 }
 
 void RemoteImageDashboardActivity::beginUpdate() {
@@ -266,12 +268,12 @@ void RemoteImageDashboardActivity::runFetch() {
     LOG_ERR("REMOTE", "Image download failed: %d", static_cast<int>(downloadResult));
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_FETCH_FAILED);
-  } else if (!validateImageFile(TEMP_PATH)) {
-    Storage.remove(TEMP_PATH);
+  } else if (!validateImageFile(tempPath())) {
+    Storage.remove(tempPath());
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_INVALID);
   } else if (!promoteDownloadedImage()) {
-    Storage.remove(TEMP_PATH);
+    Storage.remove(tempPath());
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_FETCH_FAILED);
   } else {
@@ -309,7 +311,7 @@ HttpDownloader::DownloadError RemoteImageDashboardActivity::downloadDashboardIma
     options.overallTimeoutMs = budgetMs;
     options.bypassCache = true;
     options.cancelRequested = cancelled;
-    return HttpDownloader::downloadToFile(SETTINGS.remoteImageUrl, TEMP_PATH, options);
+    return HttpDownloader::downloadToFile(dashboardUrl(), tempPath(), options);
   };
 
   const unsigned long firstBudget = std::min(FETCH_FIRST_ATTEMPT_MS, remainingBudget());
@@ -374,7 +376,7 @@ bool RemoteImageDashboardActivity::powerLatchTriggered() {
 
 void RemoteImageDashboardActivity::returnToUser() {
   stopPowerLatch();
-  if (Storage.exists(TEMP_PATH)) Storage.remove(TEMP_PATH);
+  if (Storage.exists(tempPath())) Storage.remove(tempPath());
   exitDashboardMode();
 
   // Match a normal power-button wake from dashboard sleep: return to the book
@@ -394,9 +396,9 @@ void RemoteImageDashboardActivity::goToSleepAndPoll() {
     return;
   }
 
-  APP_STATE.activeDashboardMode = CrossPointState::DASHBOARD_REMOTE_IMAGE;
+  APP_STATE.activeDashboardMode = activeDashboardMode();
   APP_STATE.saveToFile();
-  const uint32_t intervalS = SETTINGS.remoteImageRefreshMinutes * 60u;
+  const uint32_t intervalS = refreshMinutes() * 60u;
   const uint32_t intervalMs = intervalS * 1000u;
   const uint32_t cycleElapsedMs = millis() - cycleStartMs;
   const uint32_t sleepMs = intervalMs == 0 ? 1000u : intervalMs - (cycleElapsedMs % intervalMs);
@@ -406,21 +408,143 @@ void RemoteImageDashboardActivity::goToSleepAndPoll() {
 }
 
 void RemoteImageDashboardActivity::exitDashboardMode() {
-  if (APP_STATE.activeDashboardMode == CrossPointState::DASHBOARD_REMOTE_IMAGE) {
+  if (APP_STATE.activeDashboardMode == activeDashboardMode()) {
     APP_STATE.activeDashboardMode = CrossPointState::DASHBOARD_NONE;
     APP_STATE.saveToFile();
   }
 }
 
+std::string RemoteImageDashboardActivity::dashboardUrl() const {
+  if (card == Card::CustomImage) return SETTINGS.customImageUrl;
+
+  std::string base = SETTINGS.dashboardWorkerUrl;
+  while (!base.empty() && base.back() == '/') base.pop_back();
+
+  // Be forgiving when an endpoint URL was pasted instead of the Worker base.
+  std::string lower = base;
+  std::transform(lower.begin(), lower.end(), lower.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  const size_t clockRoute = lower.find("/clock.bmp");
+  const size_t weatherRoute = lower.find("/weather.bmp");
+  const size_t route = clockRoute != std::string::npos ? clockRoute : weatherRoute;
+  if (route != std::string::npos) base.resize(route);
+  if (base.empty()) return {};
+
+  base += card == Card::Clock ? "/clock.bmp" : "/weather.bmp";
+  base += gpio.deviceIsX3() ? "?device=x3" : "?device=x4";
+  base += SETTINGS.lockScreenOrientation == CrossPointSettings::LOCK_ORIENT_PORTRAIT ? "&orientation=portrait"
+                                                                                     : "&orientation=landscape";
+  return base;
+}
+
+const char* RemoteImageDashboardActivity::configuredUrl() const {
+  return card == Card::CustomImage ? SETTINGS.customImageUrl : SETTINGS.dashboardWorkerUrl;
+}
+
+char* RemoteImageDashboardActivity::configuredUrlBuffer() const {
+  return card == Card::CustomImage ? SETTINGS.customImageUrl : SETTINGS.dashboardWorkerUrl;
+}
+
+size_t RemoteImageDashboardActivity::configuredUrlCapacity() const {
+  return card == Card::CustomImage ? sizeof(SETTINGS.customImageUrl) : sizeof(SETTINGS.dashboardWorkerUrl);
+}
+
+const char* RemoteImageDashboardActivity::imagePath() const {
+  switch (card) {
+    case Card::Clock:
+      return "/.crosspoint/clock-image.bmp";
+    case Card::Weather:
+      return "/.crosspoint/weather-image.bmp";
+    case Card::CustomImage:
+      return "/.crosspoint/custom-image.bmp";
+  }
+  return "/.crosspoint/custom-image.bmp";
+}
+
+const char* RemoteImageDashboardActivity::tempPath() const {
+  switch (card) {
+    case Card::Clock:
+      return "/.crosspoint/clock-image.tmp";
+    case Card::Weather:
+      return "/.crosspoint/weather-image.tmp";
+    case Card::CustomImage:
+      return "/.crosspoint/custom-image.tmp";
+  }
+  return "/.crosspoint/custom-image.tmp";
+}
+
+const char* RemoteImageDashboardActivity::backupPath() const {
+  switch (card) {
+    case Card::Clock:
+      return "/.crosspoint/clock-image.bak";
+    case Card::Weather:
+      return "/.crosspoint/weather-image.bak";
+    case Card::CustomImage:
+      return "/.crosspoint/custom-image.bak";
+  }
+  return "/.crosspoint/custom-image.bak";
+}
+
+const char* RemoteImageDashboardActivity::title() const {
+  switch (card) {
+    case Card::Clock:
+      return tr(STR_CLOCK_DASHBOARD);
+    case Card::Weather:
+      return tr(STR_WEATHER_DASHBOARD);
+    case Card::CustomImage:
+      return tr(STR_CUSTOM_IMAGE_DASHBOARD);
+  }
+  return tr(STR_CUSTOM_IMAGE_DASHBOARD);
+}
+
+const char* RemoteImageDashboardActivity::urlLabel() const {
+  return card == Card::CustomImage ? tr(STR_CUSTOM_IMAGE_URL) : tr(STR_DASHBOARD_WORKER_URL);
+}
+
+uint8_t RemoteImageDashboardActivity::refreshMinutes() const {
+  switch (card) {
+    case Card::Clock:
+      return SETTINGS.clockRefreshMinutes;
+    case Card::Weather:
+      return SETTINGS.weatherRefreshMinutes;
+    case Card::CustomImage:
+      return SETTINGS.customImageRefreshMinutes;
+  }
+  return SETTINGS.customImageRefreshMinutes;
+}
+
+uint8_t RemoteImageDashboardActivity::activeDashboardMode() const {
+  switch (card) {
+    case Card::Clock:
+      return CrossPointState::DASHBOARD_REMOTE_CLOCK;
+    case Card::Weather:
+      return CrossPointState::DASHBOARD_REMOTE_WEATHER;
+    case Card::CustomImage:
+      return CrossPointState::DASHBOARD_CUSTOM_IMAGE;
+  }
+  return CrossPointState::DASHBOARD_NONE;
+}
+
 void RemoteImageDashboardActivity::recoverInterruptedSwap() {
-  if (!Storage.exists(IMAGE_PATH) && Storage.exists(BACKUP_PATH)) {
-    if (Storage.rename(BACKUP_PATH, IMAGE_PATH)) {
+  // Preserve the last image from builds that had one shared Remote Image
+  // cache. It belongs to whichever card the settings migration selected.
+  const char* legacyImagePath = Storage.exists("/.crosspoint/remote-image.bmp") ? "/.crosspoint/remote-image.bmp"
+                                                                                : "/.crosspoint/remote-image.bak";
+  if (!Storage.exists(imagePath()) && Storage.exists(legacyImagePath)) {
+    if (Storage.rename(legacyImagePath, imagePath())) {
+      LOG_INF("REMOTE", "Migrated legacy dashboard image cache");
+    }
+  }
+  if (!Storage.exists(imagePath()) && Storage.exists(backupPath())) {
+    if (Storage.rename(backupPath(), imagePath())) {
       LOG_INF("REMOTE", "Recovered previous dashboard image after interrupted update");
     }
-  } else if (Storage.exists(IMAGE_PATH) && Storage.exists(BACKUP_PATH)) {
-    Storage.remove(BACKUP_PATH);
+  } else if (Storage.exists(imagePath()) && Storage.exists(backupPath())) {
+    Storage.remove(backupPath());
   }
-  if (Storage.exists(TEMP_PATH)) Storage.remove(TEMP_PATH);
+  if (Storage.exists(tempPath())) Storage.remove(tempPath());
+  if (Storage.exists("/.crosspoint/remote-image.tmp")) Storage.remove("/.crosspoint/remote-image.tmp");
+  if (Storage.exists("/.crosspoint/remote-image.bak")) Storage.remove("/.crosspoint/remote-image.bak");
 }
 
 bool RemoteImageDashboardActivity::validateImageFile(const char* path) const {
@@ -456,21 +580,21 @@ bool RemoteImageDashboardActivity::validateImageFile(const char* path) const {
 }
 
 bool RemoteImageDashboardActivity::promoteDownloadedImage() {
-  if (Storage.exists(BACKUP_PATH) && !Storage.remove(BACKUP_PATH)) return false;
+  if (Storage.exists(backupPath()) && !Storage.remove(backupPath())) return false;
 
-  const bool hadPrevious = Storage.exists(IMAGE_PATH);
-  if (hadPrevious && !Storage.rename(IMAGE_PATH, BACKUP_PATH)) {
+  const bool hadPrevious = Storage.exists(imagePath());
+  if (hadPrevious && !Storage.rename(imagePath(), backupPath())) {
     LOG_ERR("REMOTE", "Could not stage previous dashboard image");
     return false;
   }
 
-  if (Storage.rename(TEMP_PATH, IMAGE_PATH)) {
-    if (hadPrevious) Storage.remove(BACKUP_PATH);
+  if (Storage.rename(tempPath(), imagePath())) {
+    if (hadPrevious) Storage.remove(backupPath());
     return true;
   }
 
   LOG_ERR("REMOTE", "Could not promote downloaded dashboard image");
-  if (hadPrevious && !Storage.rename(BACKUP_PATH, IMAGE_PATH)) {
+  if (hadPrevious && !Storage.rename(backupPath(), imagePath())) {
     LOG_ERR("REMOTE", "Could not restore previous dashboard image");
   }
   return false;
@@ -483,24 +607,35 @@ void RemoteImageDashboardActivity::render(RenderLock&&) {
       // During unattended sleep-screen refreshes, leave the last known-good
       // dashboard visible while WiFi and HTTPS run. Only first use (no cache)
       // needs the explicit updating screen.
-      if (!autoRefresh || !cachedImageAvailable || !renderCachedImage()) {
+      if (autoRefresh && (!cachedImageAvailable || !renderCachedImage())) {
+        renderDefaultSleepScreen();
+      } else if (!autoRefresh) {
         renderMessage(tr(STR_REMOTE_IMAGE_UPDATING));
       }
       break;
     case State::Failed:
       if (!cachedImageAvailable || !renderCachedImage()) {
-        renderMessage(errorMessage ? errorMessage : tr(STR_REMOTE_IMAGE_FETCH_FAILED));
+        if (autoRefresh) {
+          renderDefaultSleepScreen();
+        } else {
+          renderMessage(errorMessage ? errorMessage : tr(STR_REMOTE_IMAGE_FETCH_FAILED));
+        }
       }
       break;
     case State::Showing:
-      if (!renderCachedImage()) renderMessage(tr(STR_REMOTE_IMAGE_INVALID));
+      if (!renderCachedImage()) {
+        if (autoRefresh)
+          renderDefaultSleepScreen();
+        else
+          renderMessage(tr(STR_REMOTE_IMAGE_INVALID));
+      }
       break;
   }
 }
 
 bool RemoteImageDashboardActivity::renderCachedImage() const {
   HalFile file;
-  if (!Storage.openFileForRead("REMOTE", IMAGE_PATH, file)) return false;
+  if (!Storage.openFileForRead("REMOTE", imagePath(), file)) return false;
 
   Bitmap bitmap(file, true);
   if (bitmap.parseHeaders() != BmpReaderError::Ok) {
@@ -529,11 +664,21 @@ bool RemoteImageDashboardActivity::renderCachedImage() const {
   return true;
 }
 
+void RemoteImageDashboardActivity::renderDefaultSleepScreen() const {
+  const auto pageWidth = renderer.getScreenWidth();
+  const auto pageHeight = renderer.getScreenHeight();
+  renderer.clearScreen();
+  renderer.drawImage(Logo120, (pageWidth - 120) / 2, (pageHeight - 120) / 2, 120, 120);
+  renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 70, tr(STR_CROSSPOINT), true, EpdFontFamily::BOLD);
+  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 95, tr(STR_SLEEPING));
+  renderer.invertScreen();
+  renderer.displayBuffer(HalDisplay::FULL_REFRESH);
+}
+
 void RemoteImageDashboardActivity::renderMessage(const char* message) const {
   const int pageHeight = renderer.getScreenHeight();
   renderer.clearScreen();
-  renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 30, tr(STR_REMOTE_IMAGE_DASHBOARD), true,
-                            EpdFontFamily::BOLD);
+  renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 30, title(), true, EpdFontFamily::BOLD);
   renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 5, message);
 
   if (!autoRefresh && state == State::Failed) {

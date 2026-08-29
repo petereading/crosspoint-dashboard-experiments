@@ -40,10 +40,9 @@ class CrossPointSettings {
 
   // Which lock-screen dashboard the LOCK_SCREEN sleep mode shows.
   enum SLEEP_LOCK_SCREEN {
-    SLEEP_LOCK_GITHUB = 0,
+    SLEEP_LOCK_CLOCK = 0,
     SLEEP_LOCK_WEATHER = 1,
-    SLEEP_LOCK_TEMPEST = 2,
-    SLEEP_LOCK_REMOTE_IMAGE = 3,
+    SLEEP_LOCK_CUSTOM_IMAGE = 2,
     SLEEP_LOCK_SCREEN_COUNT
   };
   enum SLEEP_SCREEN_COVER_MODE { FIT = 0, CROP = 1, SLEEP_SCREEN_COVER_MODE_COUNT };
@@ -86,7 +85,7 @@ class CrossPointSettings {
 
   enum STATUS_BAR_CLOCK_MODE { STATUS_BAR_CLOCK_HIDE = 0, STATUS_BAR_CLOCK_RIGHT = 1, STATUS_BAR_CLOCK_LEFT = 2 };
 
-  // Orientation for the lock-screen dashboards (GitHub/Weather/Tempest).
+  // Orientation for Worker-generated clock and weather cards.
   enum LOCK_SCREEN_ORIENTATION {
     LOCK_ORIENT_LANDSCAPE = 0,  // 800x480 (default)
     LOCK_ORIENT_PORTRAIT = 1,   // 480x800
@@ -288,16 +287,23 @@ class CrossPointSettings {
   // Optional friendly label for the Tempest local-station dashboard (empty = "Tempest")
   char tempestLabel[24] = "";
   // Public HTTPS URL for the externally generated Remote Image dashboard.
+  // Retained only so older settings.json files can migrate to the new fields.
   char remoteImageUrl[256] = "";
+  // Base HTTPS URL for the combined dashboard Worker, without /clock.bmp or
+  // /weather.bmp. The firmware adds the route, hardware, and orientation.
+  char dashboardWorkerUrl[256] = "";
+  // Complete HTTPS URL for an arbitrary custom BMP.
+  char customImageUrl[256] = "";
   // Poll intervals for the timed dashboards, in minutes
   uint8_t githubRefreshMinutes = 60;
-  uint8_t weatherRefreshMinutes = 30;
+  uint8_t clockRefreshMinutes = 1;
+  uint8_t weatherRefreshMinutes = 15;
   uint8_t tempestRefreshMinutes = 10;
-  uint8_t remoteImageRefreshMinutes = 30;
+  uint8_t customImageRefreshMinutes = 30;
   // Orientation all lock-screen dashboards render in (shared setting).
   uint8_t lockScreenOrientation = LOCK_ORIENT_LANDSCAPE;
   // Which dashboard the LOCK_SCREEN sleep-screen mode shows.
-  uint8_t sleepLockScreenType = SLEEP_LOCK_GITHUB;
+  uint8_t sleepLockScreenType = SLEEP_LOCK_CLOCK;
   // Cached ZIP -> lat/lon geocode for the weather dashboard, stored as decimal
   // strings (settings only support uint8_t/char[] fields). Not user-editable;
   // saved/loaded manually since a derived cache doesn't belong in SettingsList.

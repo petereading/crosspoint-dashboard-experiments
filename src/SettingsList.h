@@ -113,8 +113,7 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
              StrId::STR_NONE_OPT, StrId::STR_QUICK_RESUME, StrId::STR_LOCK_SCREEN},
             "sleepScreen", StrId::STR_CAT_DISPLAY),
         SettingInfo::Enum(StrId::STR_LOCK_SCREEN_TYPE, &CrossPointSettings::sleepLockScreenType,
-                          {StrId::STR_GITHUB_DASHBOARD, StrId::STR_WEATHER_DASHBOARD, StrId::STR_TEMPEST_DASHBOARD,
-                           StrId::STR_REMOTE_IMAGE_DASHBOARD},
+                          {StrId::STR_CLOCK_DASHBOARD, StrId::STR_WEATHER_DASHBOARD, StrId::STR_CUSTOM_IMAGE_DASHBOARD},
                           "sleepLockScreenType", StrId::STR_CAT_DISPLAY),
         SettingInfo::Enum(StrId::STR_SLEEP_COVER_MODE, &CrossPointSettings::sleepScreenCoverMode,
                           {StrId::STR_FIT, StrId::STR_CROP}, "sleepScreenCoverMode", StrId::STR_CAT_DISPLAY),
@@ -204,26 +203,20 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                             "moveFinishedToReadFolder", StrId::STR_CAT_SYSTEM),
         // Dashboard poll intervals — real device System-tab settings so they're
         // directly tunable from Settings > System, like Time to Sleep.
-        SettingInfo::Value(StrId::STR_GITHUB_REFRESH_INTERVAL, &CrossPointSettings::githubRefreshMinutes, {5, 240, 5},
-                           "githubRefreshMinutes", StrId::STR_CAT_SYSTEM),
+        SettingInfo::Value(StrId::STR_CLOCK_REFRESH_INTERVAL, &CrossPointSettings::clockRefreshMinutes, {1, 60, 1},
+                           "clockRefreshMinutes", StrId::STR_CAT_SYSTEM),
         SettingInfo::Value(StrId::STR_WEATHER_REFRESH_INTERVAL, &CrossPointSettings::weatherRefreshMinutes, {5, 240, 5},
                            "weatherRefreshMinutes", StrId::STR_CAT_SYSTEM),
-        SettingInfo::Value(StrId::STR_TEMPEST_REFRESH_INTERVAL, &CrossPointSettings::tempestRefreshMinutes, {2, 60, 1},
-                           "tempestRefreshMinutes", StrId::STR_CAT_SYSTEM),
-        SettingInfo::Value(StrId::STR_REMOTE_IMAGE_REFRESH_INTERVAL, &CrossPointSettings::remoteImageRefreshMinutes,
-                           {1, 240, 1}, "remoteImageRefreshMinutes", StrId::STR_CAT_SYSTEM),
+        SettingInfo::Value(StrId::STR_CUSTOM_IMAGE_REFRESH_INTERVAL, &CrossPointSettings::customImageRefreshMinutes,
+                           {1, 240, 1}, "customImageRefreshMinutes", StrId::STR_CAT_SYSTEM),
         SettingInfo::Enum(StrId::STR_LOCK_SCREEN_ORIENTATION, &CrossPointSettings::lockScreenOrientation,
                           {StrId::STR_LANDSCAPE, StrId::STR_PORTRAIT}, "lockScreenOrientation", StrId::STR_CAT_SYSTEM),
         // Web/JSON only (edited on-device inside each dashboard itself); the
         // category keeps these out of the four device settings tabs.
-        SettingInfo::String(StrId::STR_GITHUB_USERNAME, SETTINGS.githubUsername, sizeof(SETTINGS.githubUsername) - 1,
-                            "githubUsername", StrId::STR_GITHUB_DASHBOARD),
-        SettingInfo::String(StrId::STR_WEATHER_ZIP, SETTINGS.weatherZip, sizeof(SETTINGS.weatherZip) - 1, "weatherZip",
-                            StrId::STR_WEATHER_DASHBOARD),
-        SettingInfo::String(StrId::STR_TEMPEST_LABEL, SETTINGS.tempestLabel, sizeof(SETTINGS.tempestLabel) - 1,
-                            "tempestLabel", StrId::STR_TEMPEST_DASHBOARD),
-        SettingInfo::String(StrId::STR_REMOTE_IMAGE_URL, SETTINGS.remoteImageUrl, sizeof(SETTINGS.remoteImageUrl) - 1,
-                            "remoteImageUrl", StrId::STR_REMOTE_IMAGE_DASHBOARD),
+        SettingInfo::String(StrId::STR_DASHBOARD_WORKER_URL, SETTINGS.dashboardWorkerUrl,
+                            sizeof(SETTINGS.dashboardWorkerUrl), "dashboardWorkerUrl", StrId::STR_LOCK_SCREENS),
+        SettingInfo::String(StrId::STR_CUSTOM_IMAGE_URL, SETTINGS.customImageUrl, sizeof(SETTINGS.customImageUrl),
+                            "customImageUrl", StrId::STR_LOCK_SCREENS),
 
         // --- KOReader Sync (web-only, uses KOReaderCredentialStore) ---
         SettingInfo::DynamicString(

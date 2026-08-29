@@ -29,18 +29,15 @@
 #include "SdCardFontSystem.h"
 #include "activities/Activity.h"
 #include "activities/ActivityManager.h"
-#include "activities/github/GithubDashboardActivity.h"
 #include "activities/remote/RemoteImageDashboardActivity.h"
 #include "activities/settings/SdFirmwareUpdateActivity.h"
-#include "activities/tempest/TempestDashboardActivity.h"
-#include "activities/weather/WeatherDashboardActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "images/LoadingIcon.h"
 #include "util/ButtonNavigator.h"
 #include "util/ScreenshotUtil.h"
 
-// The dashboard lock screens (GitHub/Weather/Tempest) run their network poll
+// The dashboard lock screens run their network poll
 // directly on the Arduino loop task: syncClockAndTimezone() plus an HTTPS
 // fetch via HttpDownloader -> esp_http_client -> esp-tls -> mbedTLS. The
 // mbedTLS handshake is deeply stack-hungry, and on the RISC-V ESP32-C3 (more
@@ -426,7 +423,7 @@ void setup() {
   UITheme::getInstance().reload();
   ButtonNavigator::setMappedInputManager(mappedInputManager);
 
-  // Polling dashboard mode (GitHub/Weather/Tempest): an RTC timer wake means
+  // Polling dashboard mode: an RTC timer wake means
   // "poll and redraw"; any other wake (power button, cold boot) exits the
   // mode back to normal use.
   uint8_t dashboardResume = CrossPointState::DASHBOARD_NONE;
@@ -518,19 +515,16 @@ void setup() {
       break;
   }
 
-  if (dashboardResume == CrossPointState::DASHBOARD_GITHUB) {
+  if (dashboardResume == CrossPointState::DASHBOARD_REMOTE_CLOCK) {
     // Unattended timer wake: refresh the dashboard and go back to timed sleep.
-    activityManager.replaceActivity(
-        std::make_unique<GithubDashboardActivity>(renderer, mappedInputManager, /*autoRefresh=*/true));
-  } else if (dashboardResume == CrossPointState::DASHBOARD_WEATHER) {
-    activityManager.replaceActivity(
-        std::make_unique<WeatherDashboardActivity>(renderer, mappedInputManager, /*autoRefresh=*/true));
-  } else if (dashboardResume == CrossPointState::DASHBOARD_TEMPEST) {
-    activityManager.replaceActivity(
-        std::make_unique<TempestDashboardActivity>(renderer, mappedInputManager, /*autoRefresh=*/true));
-  } else if (dashboardResume == CrossPointState::DASHBOARD_REMOTE_IMAGE) {
-    activityManager.replaceActivity(
-        std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInputManager, /*autoRefresh=*/true));
+    activityManager.replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
+        renderer, mappedInputManager, RemoteImageDashboardActivity::Card::Clock, /*autoRefresh=*/true));
+  } else if (dashboardResume == CrossPointState::DASHBOARD_REMOTE_WEATHER) {
+    activityManager.replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
+        renderer, mappedInputManager, RemoteImageDashboardActivity::Card::Weather, /*autoRefresh=*/true));
+  } else if (dashboardResume == CrossPointState::DASHBOARD_CUSTOM_IMAGE) {
+    activityManager.replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
+        renderer, mappedInputManager, RemoteImageDashboardActivity::Card::CustomImage, /*autoRefresh=*/true));
   } else if (recoveryFirmwareMode) {
     // Skip normal home/reader routing: jump straight into the SD firmware picker.
     activityManager.replaceActivity(

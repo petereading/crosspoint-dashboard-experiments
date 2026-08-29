@@ -86,10 +86,9 @@ class ActivityManager {
   void goToFileBrowser(std::string path = {});
   void goToRecentBooks();
   void goToBrowser();
-  void goToGithubDashboard();
+  void goToClockDashboard();
   void goToWeatherDashboard();
-  void goToTempestDashboard();
-  void goToRemoteImageDashboard();
+  void goToCustomImageDashboard();
   void goToLockScreens();
   // Launch the SETTINGS.sleepLockScreenType dashboard in unattended
   // (autoRefresh) mode, for the LOCK_SCREEN sleep-screen behavior.

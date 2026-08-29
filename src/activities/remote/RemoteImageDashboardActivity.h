@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include "activities/Activity.h"
 #include "network/HttpDownloader.h"
 
@@ -7,9 +9,11 @@
 // validation, display, and timed sleep; dashboard generation stays off-device.
 class RemoteImageDashboardActivity final : public Activity {
  public:
-  explicit RemoteImageDashboardActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
+  enum class Card { Clock, Weather, CustomImage };
+
+  explicit RemoteImageDashboardActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, Card card,
                                         bool autoRefresh = false)
-      : Activity("RemoteImageDashboard", renderer, mappedInput), autoRefresh(autoRefresh) {}
+      : Activity("RemoteImageDashboard", renderer, mappedInput), card(card), autoRefresh(autoRefresh) {}
 
   void onEnter() override;
   void onExit() override;
@@ -27,10 +31,8 @@ class RemoteImageDashboardActivity final : public Activity {
   static constexpr unsigned long FETCH_OPERATION_TIMEOUT_MS = 3000;
   static constexpr unsigned long WIFI_RETRY_TIMEOUT_MS = 5000;
   static constexpr unsigned long DISPLAY_GRACE_INTERACTIVE_MS = 20000;
-  static constexpr const char* IMAGE_PATH = "/.crosspoint/remote-image.bmp";
-  static constexpr const char* TEMP_PATH = "/.crosspoint/remote-image.tmp";
-  static constexpr const char* BACKUP_PATH = "/.crosspoint/remote-image.bak";
 
+  const Card card;
   const bool autoRefresh;
   State state = State::Connecting;
   bool wifiUsed = false;
@@ -56,9 +58,22 @@ class RemoteImageDashboardActivity final : public Activity {
   void goToSleepAndPoll();
   void exitDashboardMode();
 
+  std::string dashboardUrl() const;
+  const char* configuredUrl() const;
+  char* configuredUrlBuffer() const;
+  size_t configuredUrlCapacity() const;
+  const char* imagePath() const;
+  const char* tempPath() const;
+  const char* backupPath() const;
+  const char* title() const;
+  const char* urlLabel() const;
+  uint8_t refreshMinutes() const;
+  uint8_t activeDashboardMode() const;
+
   void recoverInterruptedSwap();
   bool validateImageFile(const char* path) const;
   bool promoteDownloadedImage();
   bool renderCachedImage() const;
+  void renderDefaultSleepScreen() const;
   void renderMessage(const char* message) const;
 };

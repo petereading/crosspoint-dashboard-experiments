@@ -10,7 +10,6 @@
 #include "boot_sleep/BootActivity.h"
 #include "boot_sleep/SleepActivity.h"
 #include "browser/OpdsBookBrowserActivity.h"
-#include "github/GithubDashboardActivity.h"
 #include "home/CrashActivity.h"
 #include "home/FileBrowserActivity.h"
 #include "home/HomeActivity.h"
@@ -21,9 +20,7 @@
 #include "remote/RemoteImageDashboardActivity.h"
 #include "settings/OpdsServerListActivity.h"
 #include "settings/SettingsActivity.h"
-#include "tempest/TempestDashboardActivity.h"
 #include "util/FullScreenMessageActivity.h"
-#include "weather/WeatherDashboardActivity.h"
 
 static portMUX_TYPE activityManagerSpinlock = portMUX_INITIALIZER_UNLOCKED;
 
@@ -201,20 +198,19 @@ void ActivityManager::goToBrowser() {
   }
 }
 
-void ActivityManager::goToGithubDashboard() {
-  replaceActivity(std::make_unique<GithubDashboardActivity>(renderer, mappedInput));
+void ActivityManager::goToClockDashboard() {
+  replaceActivity(
+      std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, RemoteImageDashboardActivity::Card::Clock));
 }
 
 void ActivityManager::goToWeatherDashboard() {
-  replaceActivity(std::make_unique<WeatherDashboardActivity>(renderer, mappedInput));
+  replaceActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput,
+                                                                 RemoteImageDashboardActivity::Card::Weather));
 }
 
-void ActivityManager::goToTempestDashboard() {
-  replaceActivity(std::make_unique<TempestDashboardActivity>(renderer, mappedInput));
-}
-
-void ActivityManager::goToRemoteImageDashboard() {
-  replaceActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput));
+void ActivityManager::goToCustomImageDashboard() {
+  replaceActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput,
+                                                                 RemoteImageDashboardActivity::Card::CustomImage));
 }
 
 void ActivityManager::goToLockScreens() {
@@ -224,16 +220,16 @@ void ActivityManager::goToLockScreens() {
 void ActivityManager::goToLockScreenDashboard() {
   switch (SETTINGS.sleepLockScreenType) {
     case CrossPointSettings::SLEEP_LOCK_WEATHER:
-      replaceActivity(std::make_unique<WeatherDashboardActivity>(renderer, mappedInput, /*autoRefresh=*/true));
+      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
+          renderer, mappedInput, RemoteImageDashboardActivity::Card::Weather, /*autoRefresh=*/true));
       break;
-    case CrossPointSettings::SLEEP_LOCK_TEMPEST:
-      replaceActivity(std::make_unique<TempestDashboardActivity>(renderer, mappedInput, /*autoRefresh=*/true));
-      break;
-    case CrossPointSettings::SLEEP_LOCK_REMOTE_IMAGE:
-      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, /*autoRefresh=*/true));
+    case CrossPointSettings::SLEEP_LOCK_CUSTOM_IMAGE:
+      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
+          renderer, mappedInput, RemoteImageDashboardActivity::Card::CustomImage, /*autoRefresh=*/true));
       break;
     default:
-      replaceActivity(std::make_unique<GithubDashboardActivity>(renderer, mappedInput, /*autoRefresh=*/true));
+      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
+          renderer, mappedInput, RemoteImageDashboardActivity::Card::Clock, /*autoRefresh=*/true));
       break;
   }
 }

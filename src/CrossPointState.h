@@ -28,10 +28,13 @@ class CrossPointState {
   // right dashboard activity; any other wake reason clears it back to NONE.
   enum ActiveDashboard : uint8_t {
     DASHBOARD_NONE = 0,
-    DASHBOARD_GITHUB = 1,
-    DASHBOARD_WEATHER = 2,
-    DASHBOARD_TEMPEST = 3,
-    DASHBOARD_REMOTE_IMAGE = 4
+    DASHBOARD_REMOTE_CLOCK = 1,
+    DASHBOARD_REMOTE_WEATHER = 2,
+    DASHBOARD_CUSTOM_IMAGE = 3,
+    // Source-compatible aliases for the now-hidden native dashboard classes.
+    DASHBOARD_GITHUB = DASHBOARD_REMOTE_CLOCK,
+    DASHBOARD_WEATHER = DASHBOARD_REMOTE_WEATHER,
+    DASHBOARD_TEMPEST = DASHBOARD_CUSTOM_IMAGE
   };
   uint8_t activeDashboardMode = DASHBOARD_NONE;
 

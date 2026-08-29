@@ -50,11 +50,14 @@ void RemoteImageDashboardActivity::onEnter() {
 
   // When Remote Image is entered as the configured sleep screen, paint the
   // last known-good dashboard immediately instead of replacing the reader page
-  // with a blocking "Downloading image..." screen. A timer wake already has
-  // the cached dashboard retained on the e-ink panel, so avoid needlessly
+  // with a blocking "Downloading image..." screen. Wait for this first paint
+  // before starting HTTPS: otherwise its completion can satisfy the later
+  // requestUpdateAndWait() for the downloaded image and let the device sleep
+  // before that new image reaches the panel. A timer wake already has the
+  // cached dashboard retained on the e-ink panel, so avoid needlessly
   // repainting the same image before the scheduled refresh begins.
   if (autoRefresh && cachedImageAvailable && APP_STATE.activeDashboardMode != CrossPointState::DASHBOARD_REMOTE_IMAGE) {
-    requestUpdate();
+    requestUpdateAndWait();
   }
 
   if (SETTINGS.remoteImageUrl[0] == '\0') {

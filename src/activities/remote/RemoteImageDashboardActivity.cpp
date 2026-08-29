@@ -39,6 +39,7 @@ void IRAM_ATTR remotePowerInterruptHandler() { remotePowerInterruptFired = 1; }
 void RemoteImageDashboardActivity::onEnter() {
   Activity::onEnter();
 
+  cycleStartMs = millis();
   powerInputArmed = false;
   powerExitRequested = false;
   partialRefreshTestPending = autoRefresh && gpio.deviceIsX3();
@@ -168,6 +169,10 @@ void RemoteImageDashboardActivity::startDirectWifiConnect() {
 
   LOG_INF("REMOTE", "Unattended refresh: connecting to %s", cred->ssid.c_str());
   WiFi.mode(WIFI_STA);
+  // The device returns to deep sleep immediately after the fetch, so modem
+  // sleep saves little here and can add multi-second latency to short TLS
+  // transfers on marginal links.
+  WiFi.setSleep(false);
   WiFi.begin(cred->ssid.c_str(), cred->password.empty() ? nullptr : cred->password.c_str());
   wifiConnectStart = millis();
 }
@@ -249,7 +254,12 @@ void RemoteImageDashboardActivity::runFetch() {
   Storage.mkdir("/.crosspoint");
 
   LOG_INF("REMOTE", "Downloading configured dashboard image");
-  const auto downloadResult = HttpDownloader::downloadToFile(SETTINGS.remoteImageUrl, TEMP_PATH);
+  const auto downloadResult = downloadDashboardImage();
+  if (downloadResult == HttpDownloader::ABORTED && autoRefresh && powerLatchTriggered()) {
+    LOG_INF("REMOTE", "Dashboard download cancelled by power button");
+    returnToUser();
+    return;
+  }
   if (downloadResult != HttpDownloader::OK) {
     LOG_ERR("REMOTE", "Image download failed: %d", static_cast<int>(downloadResult));
     state = State::Failed;
@@ -282,6 +292,56 @@ void RemoteImageDashboardActivity::runFetch() {
   } else if (state == State::Showing) {
     sleepAt = millis() + DISPLAY_GRACE_INTERACTIVE_MS;
   }
+}
+
+HttpDownloader::DownloadError RemoteImageDashboardActivity::downloadDashboardImage() {
+  const unsigned long fetchStartedAt = millis();
+  const auto cancelled = [this]() { return autoRefresh && powerLatchTriggered(); };
+  const auto remainingBudget = [&]() -> unsigned long {
+    const unsigned long elapsed = millis() - fetchStartedAt;
+    return elapsed < FETCH_TOTAL_TIMEOUT_MS ? FETCH_TOTAL_TIMEOUT_MS - elapsed : 0;
+  };
+  const auto fetchOnce = [&](unsigned long budgetMs) {
+    HttpDownloader::DownloadOptions options;
+    options.operationTimeoutMs = std::min(FETCH_OPERATION_TIMEOUT_MS, budgetMs);
+    options.overallTimeoutMs = budgetMs;
+    options.bypassCache = true;
+    options.cancelRequested = cancelled;
+    return HttpDownloader::downloadToFile(SETTINGS.remoteImageUrl, TEMP_PATH, options);
+  };
+
+  const unsigned long firstBudget = std::min(FETCH_FIRST_ATTEMPT_MS, remainingBudget());
+  auto result = fetchOnce(firstBudget);
+  if (result == HttpDownloader::OK || result == HttpDownloader::ABORTED || cancelled()) return result;
+
+  LOG_INF("REMOTE", "First image fetch failed (%d); reconnecting once", static_cast<int>(result));
+  const unsigned long reconnectBudget = std::min(WIFI_RETRY_TIMEOUT_MS, remainingBudget());
+  if (reconnectBudget == 0 || !reconnectWifiForRetry(reconnectBudget)) {
+    return cancelled() ? HttpDownloader::ABORTED : result;
+  }
+
+  const unsigned long retryBudget = remainingBudget();
+  if (retryBudget == 0) return HttpDownloader::TIMED_OUT;
+  LOG_INF("REMOTE", "Retrying dashboard image fetch with %lu ms remaining", retryBudget);
+  return fetchOnce(retryBudget);
+}
+
+bool RemoteImageDashboardActivity::reconnectWifiForRetry(unsigned long timeoutMs) {
+  const std::string lastSsid = WIFI_STORE.getLastConnectedSsid();
+  const WifiCredential* cred = lastSsid.empty() ? nullptr : WIFI_STORE.findCredential(lastSsid);
+  if (!cred) return false;
+
+  WiFi.disconnect(false);
+  delay(50);
+  if (powerLatchTriggered()) return false;
+  WiFi.begin(cred->ssid.c_str(), cred->password.empty() ? nullptr : cred->password.c_str());
+
+  const unsigned long startedAt = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startedAt < timeoutMs) {
+    if (powerLatchTriggered()) return false;
+    delay(50);
+  }
+  return WiFi.status() == WL_CONNECTED;
 }
 
 void RemoteImageDashboardActivity::startPowerLatch() {
@@ -335,8 +395,12 @@ void RemoteImageDashboardActivity::goToSleepAndPoll() {
   APP_STATE.activeDashboardMode = CrossPointState::DASHBOARD_REMOTE_IMAGE;
   APP_STATE.saveToFile();
   const uint32_t intervalS = SETTINGS.remoteImageRefreshMinutes * 60u;
-  LOG_INF("REMOTE", "Dashboard armed, sleeping for %u s", static_cast<unsigned>(intervalS));
-  enterDashboardSleep(intervalS);
+  const uint32_t intervalMs = intervalS * 1000u;
+  const uint32_t cycleElapsedMs = millis() - cycleStartMs;
+  const uint32_t sleepMs = intervalMs == 0 ? 1000u : intervalMs - (cycleElapsedMs % intervalMs);
+  const uint32_t sleepS = std::max<uint32_t>(1u, (sleepMs + 999u) / 1000u);
+  LOG_INF("REMOTE", "Dashboard armed after %lu ms, sleeping for %u s", cycleElapsedMs, static_cast<unsigned>(sleepS));
+  enterDashboardSleep(sleepS);
 }
 
 void RemoteImageDashboardActivity::exitDashboardMode() {

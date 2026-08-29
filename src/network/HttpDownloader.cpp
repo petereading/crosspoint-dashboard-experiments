@@ -29,10 +29,26 @@ constexpr size_t READ_CHUNK = 2048;
 struct Sink {
   std::function<bool(const uint8_t*, size_t)> write;  // returns false to abort the transfer
   HttpDownloader::ProgressCallback progress;
-  bool* cancelFlag = nullptr;
+  HttpDownloader::CancelCallback cancelRequested;
+  uint32_t operationTimeoutMs = HTTP_TIMEOUT_MS;
+  uint32_t overallTimeoutMs = 0;
+  unsigned long startedAtMs = 0;
+  bool bypassCache = false;
   size_t total = 0;
   size_t downloaded = 0;
 };
+
+bool interrupted(const Sink& sink, HttpDownloader::DownloadError* result) {
+  if (sink.cancelRequested && sink.cancelRequested()) {
+    *result = HttpDownloader::ABORTED;
+    return true;
+  }
+  if (sink.overallTimeoutMs != 0 && millis() - sink.startedAtMs >= sink.overallTimeoutMs) {
+    *result = HttpDownloader::TIMED_OUT;
+    return true;
+  }
+  return false;
+}
 
 bool isRedirect(int status) {
   return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
@@ -49,7 +65,7 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
   config.url = url.c_str();
   config.buffer_size = HTTP_RX_BUF;
   config.buffer_size_tx = HTTP_TX_BUF;
-  config.timeout_ms = HTTP_TIMEOUT_MS;
+  config.timeout_ms = sink.operationTimeoutMs != 0 ? sink.operationTimeoutMs : HTTP_TIMEOUT_MS;
   // Verify HTTPS against the bundled CA roots. This build has esp-tls
   // CONFIG_ESP_TLS_INSECURE off, so an unverified TLS handshake can't be set
   // up at all; the model is public servers over verified https and local
@@ -66,6 +82,10 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
   }
 
   esp_http_client_set_header(client, "User-Agent", "CrossPoint-ESP32-" CROSSPOINT_VERSION);
+  if (sink.bypassCache) {
+    esp_http_client_set_header(client, "Cache-Control", "no-cache, no-store, max-age=0");
+    esp_http_client_set_header(client, "Pragma", "no-cache");
+  }
   if (!username.empty() && !password.empty()) {
     // Preemptive Basic auth, like the prior addHeader; don't wait for a 401.
     const std::string credentials = username + ":" + password;
@@ -76,6 +96,12 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
   // open()/read() does not auto-follow redirects (only perform() does), so step
   // 30x responses manually. OPDS download endpoints and the GitHub release CDN
   // both redirect.
+  HttpDownloader::DownloadError stopResult;
+  if (interrupted(sink, &stopResult)) {
+    esp_http_client_cleanup(client);
+    return stopResult;
+  }
+
   esp_err_t err = esp_http_client_open(client, 0);
   if (err != ESP_OK) {
     LOG_ERR("HTTP", "open failed: %s", esp_err_to_name(err));
@@ -83,8 +109,16 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
     return HttpDownloader::HTTP_ERROR;
   }
   int64_t contentLength = esp_http_client_fetch_headers(client);
+  if (interrupted(sink, &stopResult)) {
+    esp_http_client_cleanup(client);
+    return stopResult;
+  }
   int status = esp_http_client_get_status_code(client);
   for (int hop = 0; isRedirect(status) && hop < 5; ++hop) {
+    if (interrupted(sink, &stopResult)) {
+      esp_http_client_cleanup(client);
+      return stopResult;
+    }
     if (esp_http_client_set_redirection(client) != ESP_OK) break;
     err = esp_http_client_open(client, 0);
     if (err != ESP_OK) {
@@ -93,6 +127,10 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
       return HttpDownloader::HTTP_ERROR;
     }
     contentLength = esp_http_client_fetch_headers(client);
+    if (interrupted(sink, &stopResult)) {
+      esp_http_client_cleanup(client);
+      return stopResult;
+    }
     status = esp_http_client_get_status_code(client);
   }
 
@@ -114,9 +152,9 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
   }
 
   while (true) {
-    if (sink.cancelFlag && *sink.cancelFlag) {
+    if (interrupted(sink, &stopResult)) {
       esp_http_client_cleanup(client);
-      return HttpDownloader::ABORTED;
+      return stopResult;
     }
     const int read = esp_http_client_read(client, buf.get(), READ_CHUNK);
     if (read < 0) {
@@ -124,7 +162,16 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
       esp_http_client_cleanup(client);
       return HttpDownloader::HTTP_ERROR;
     }
-    if (read == 0) break;  // all data received
+    if (read == 0) {
+      if (esp_http_client_is_complete_data_received(client)) break;
+      if (interrupted(sink, &stopResult)) {
+        esp_http_client_cleanup(client);
+        return stopResult;
+      }
+      LOG_ERR("HTTP", "read stalled after %zu bytes", sink.downloaded);
+      esp_http_client_cleanup(client);
+      return HttpDownloader::HTTP_ERROR;
+    }
     if (!sink.write(reinterpret_cast<const uint8_t*>(buf.get()), read)) {
       esp_http_client_cleanup(client);
       return HttpDownloader::FILE_ERROR;
@@ -174,6 +221,14 @@ bool HttpDownloader::fetchUrl(const std::string& url, const DataCallback& onData
 HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& url, const std::string& destPath,
                                                              ProgressCallback progress, bool* cancelFlag,
                                                              const std::string& username, const std::string& password) {
+  DownloadOptions options;
+  if (cancelFlag) options.cancelRequested = [cancelFlag]() { return *cancelFlag; };
+  return downloadToFile(url, destPath, options, std::move(progress), username, password);
+}
+
+HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& url, const std::string& destPath,
+                                                             const DownloadOptions& options, ProgressCallback progress,
+                                                             const std::string& username, const std::string& password) {
   LOG_DBG("HTTP", "Downloading: %s -> %s", url.c_str(), destPath.c_str());
 
   if (Storage.exists(destPath.c_str())) {
@@ -187,7 +242,11 @@ HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& 
 
   Sink sink;
   sink.progress = std::move(progress);
-  sink.cancelFlag = cancelFlag;
+  sink.cancelRequested = options.cancelRequested;
+  sink.operationTimeoutMs = options.operationTimeoutMs;
+  sink.overallTimeoutMs = options.overallTimeoutMs;
+  sink.startedAtMs = millis();
+  sink.bypassCache = options.bypassCache;
   sink.write = [&file](const uint8_t* data, size_t len) { return file.write(data, len) == len; };
 
   const DownloadError result = runGet(url, username, password, sink);

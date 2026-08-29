@@ -1,6 +1,7 @@
 #pragma once
 #include <HalStorage.h>
 
+#include <cstdint>
 #include <functional>
 #include <string>
 
@@ -12,6 +13,7 @@
 class HttpDownloader {
  public:
   using ProgressCallback = std::function<void(size_t downloaded, size_t total)>;
+  using CancelCallback = std::function<bool()>;
   // Called with each body chunk as it arrives; return false to abort. Lets a
   // streaming parser consume the response without buffering the whole body.
   using DataCallback = std::function<bool(const uint8_t* data, size_t len)>;
@@ -21,6 +23,14 @@ class HttpDownloader {
     HTTP_ERROR,
     FILE_ERROR,
     ABORTED,
+    TIMED_OUT,
+  };
+
+  struct DownloadOptions {
+    uint32_t operationTimeoutMs = 60000;
+    uint32_t overallTimeoutMs = 0;
+    bool bypassCache = false;
+    CancelCallback cancelRequested;
   };
 
   /**
@@ -43,5 +53,14 @@ class HttpDownloader {
    */
   static DownloadError downloadToFile(const std::string& url, const std::string& destPath,
                                       ProgressCallback progress = nullptr, bool* cancelFlag = nullptr,
+                                      const std::string& username = "", const std::string& password = "");
+
+  /**
+   * Download with request-level timeouts, cache control, and callback-based
+   * cancellation. The transfer remains synchronous; callbacks are checked
+   * between bounded socket operations.
+   */
+  static DownloadError downloadToFile(const std::string& url, const std::string& destPath,
+                                      const DownloadOptions& options, ProgressCallback progress = nullptr,
                                       const std::string& username = "", const std::string& password = "");
 };

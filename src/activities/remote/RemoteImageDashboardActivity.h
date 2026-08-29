@@ -1,6 +1,7 @@
 #pragma once
 
 #include "activities/Activity.h"
+#include "network/HttpDownloader.h"
 
 // Generic externally-rendered dashboard. The device only owns transport,
 // validation, display, and timed sleep; dashboard generation stays off-device.
@@ -21,6 +22,10 @@ class RemoteImageDashboardActivity final : public Activity {
   enum class State { Connecting, Fetching, Showing, Failed };
 
   static constexpr unsigned long WIFI_TIMEOUT_MS = 45000;
+  static constexpr unsigned long FETCH_TOTAL_TIMEOUT_MS = 25000;
+  static constexpr unsigned long FETCH_FIRST_ATTEMPT_MS = 9000;
+  static constexpr unsigned long FETCH_OPERATION_TIMEOUT_MS = 3000;
+  static constexpr unsigned long WIFI_RETRY_TIMEOUT_MS = 5000;
   static constexpr unsigned long DISPLAY_GRACE_INTERACTIVE_MS = 20000;
   static constexpr const char* IMAGE_PATH = "/.crosspoint/remote-image.bmp";
   static constexpr const char* TEMP_PATH = "/.crosspoint/remote-image.tmp";
@@ -34,6 +39,7 @@ class RemoteImageDashboardActivity final : public Activity {
   bool powerExitRequested = false;
   bool powerInterruptAttached = false;
   mutable bool partialRefreshTestPending = false;
+  unsigned long cycleStartMs = 0;
   unsigned long wifiConnectStart = 0;
   unsigned long sleepAt = 0;
   const char* errorMessage = nullptr;
@@ -42,6 +48,8 @@ class RemoteImageDashboardActivity final : public Activity {
   void beginUpdate();
   void startDirectWifiConnect();
   void runFetch();
+  HttpDownloader::DownloadError downloadDashboardImage();
+  bool reconnectWifiForRetry(unsigned long timeoutMs);
   void startPowerLatch();
   void stopPowerLatch();
   bool powerLatchTriggered();

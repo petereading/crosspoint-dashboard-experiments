@@ -293,7 +293,10 @@ bool RemoteImageDashboardActivity::startFetchWorker() {
 
 void RemoteImageDashboardActivity::fetchWorkerRun(ActivityWorker& worker, void* context) {
   auto* activity = static_cast<RemoteImageDashboardActivity*>(context);
-  activity->fetchResult.store(activity->downloadDashboardImage(worker), std::memory_order_release);
+  const auto result = activity->downloadDashboardImage(worker);
+  LOG_INF("REMOTE", "Fetch worker completed (%d), minimum stack reserve %u bytes", static_cast<int>(result),
+          static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
+  activity->fetchResult.store(result, std::memory_order_release);
 }
 
 void RemoteImageDashboardActivity::handleFetchResult() {

@@ -30,7 +30,10 @@ class RemoteImageDashboardActivity final : public Activity {
   static constexpr unsigned long FETCH_OPERATION_TIMEOUT_MS = 3000;
   static constexpr unsigned long WIFI_RETRY_TIMEOUT_MS = 5000;
   static constexpr unsigned long DISPLAY_GRACE_INTERACTIVE_MS = 20000;
-  static constexpr uint32_t FETCH_TASK_STACK_BYTES = 4096;
+  // HTTPS/TLS previously ran on Arduino's 8 KB loop stack. Keep the worker at
+  // the same proven size: the 4 KB first pass could corrupt its stack on X3
+  // without ever publishing completion, leaving the cached image indefinitely.
+  static constexpr uint32_t FETCH_TASK_STACK_BYTES = 8192;
   static constexpr const char* IMAGE_PATH = "/.crosspoint/remote-image.bmp";
   static constexpr const char* TEMP_PATH = "/.crosspoint/remote-image.tmp";
   static constexpr const char* BACKUP_PATH = "/.crosspoint/remote-image.bak";

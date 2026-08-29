@@ -31,7 +31,7 @@
 #include "network/HttpDownloader.h"
 
 namespace {
-DRAM_ATTR volatile uint32_t remotePowerInterruptFired = 0;
+volatile uint32_t remotePowerInterruptFired = 0;
 
 void IRAM_ATTR remotePowerInterruptHandler() { remotePowerInterruptFired = 1; }
 }  // namespace
@@ -81,7 +81,6 @@ void RemoteImageDashboardActivity::onEnter() {
 }
 
 void RemoteImageDashboardActivity::onExit() {
-  fetchWorker.requestCancel();
   stopPowerLatch();
   Activity::onExit();
   if (wifiUsed && WiFi.getMode() != WIFI_MODE_NULL) {
@@ -128,14 +127,6 @@ void RemoteImageDashboardActivity::promptUrl() {
 }
 
 void RemoteImageDashboardActivity::beginUpdate() {
-  if (!fetchWorker.reset()) {
-    LOG_ERR("REMOTE", "Cannot start update while the previous fetch is still running");
-    state = State::Failed;
-    errorMessage = tr(STR_REMOTE_IMAGE_FETCH_FAILED);
-    requestUpdate();
-    return;
-  }
-  fetchPresentationComplete.store(false, std::memory_order_release);
   state = State::Connecting;
   errorMessage = nullptr;
   sleepAt = 0;
@@ -201,15 +192,9 @@ void RemoteImageDashboardActivity::loop() {
     }
 
     if (powerLatchTriggered()) {
-      fetchWorker.requestCancel();
       returnToUser();
       return;
     }
-  } else if (state == State::Fetching && mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-    LOG_INF("REMOTE", "Dashboard download cancelled by Back button");
-    fetchWorker.requestCancel();
-    finish();
-    return;
   }
 
   switch (state) {
@@ -217,7 +202,6 @@ void RemoteImageDashboardActivity::loop() {
       if (!autoRefresh) return;
       if (WiFi.status() == WL_CONNECTED) {
         state = State::Fetching;
-        fetchPresentationComplete.store(false, std::memory_order_release);
         return;
       }
       if (millis() - wifiConnectStart >= WIFI_TIMEOUT_MS) {
@@ -234,23 +218,8 @@ void RemoteImageDashboardActivity::loop() {
       return;
 
     case State::Fetching:
-      if (!autoRefresh && !fetchPresentationComplete.load(std::memory_order_acquire)) {
-        requestUpdate();
-        return;
-      }
-      if (!fetchWorker.isRunning() && !fetchWorker.isComplete()) {
-        if (!startFetchWorker()) {
-          {
-            RenderLock lock(*this);
-            state = State::Failed;
-            errorMessage = tr(STR_REMOTE_IMAGE_FETCH_FAILED);
-          }
-          requestUpdateAndWait();
-          if (autoRefresh) goToSleepAndPoll();
-        }
-        return;
-      }
-      if (!fetchWorker.isRunning() && fetchWorker.isComplete()) handleFetchResult();
+      if (!autoRefresh) requestUpdateAndWait();
+      runFetch();
       return;
 
     case State::Showing:
@@ -283,65 +252,31 @@ void RemoteImageDashboardActivity::loop() {
   }
 }
 
-bool RemoteImageDashboardActivity::startFetchWorker() {
+void RemoteImageDashboardActivity::runFetch() {
   Storage.mkdir("/.crosspoint");
+
   LOG_INF("REMOTE", "Downloading configured dashboard image");
-  wifiUsed = true;
-  fetchResult.store(HttpDownloader::HTTP_ERROR, std::memory_order_release);
-  return fetchWorker.start("RemoteImageFetch", FETCH_TASK_STACK_BYTES, fetchWorkerRun, this);
-}
-
-void RemoteImageDashboardActivity::fetchWorkerRun(ActivityWorker& worker, void* context) {
-  auto* activity = static_cast<RemoteImageDashboardActivity*>(context);
-  const auto result = activity->downloadDashboardImage(&worker);
-  LOG_INF("REMOTE", "Fetch worker completed (%d), minimum stack reserve %u bytes", static_cast<int>(result),
-          static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
-  activity->fetchResult.store(result, std::memory_order_release);
-}
-
-void RemoteImageDashboardActivity::handleFetchResult() {
-  auto downloadResult = fetchResult.load(std::memory_order_acquire);
-  if (!fetchWorker.reset()) {
-    LOG_ERR("REMOTE", "Fetch completion observed while worker is still running");
-    return;
-  }
-
+  const auto downloadResult = downloadDashboardImage();
   if (downloadResult == HttpDownloader::ABORTED && autoRefresh && powerLatchTriggered()) {
     LOG_INF("REMOTE", "Dashboard download cancelled by power button");
     returnToUser();
     return;
   }
-
-  // Keep the known-good synchronous path as a diagnostic safety net while the
-  // new worker is being proven on physical X3 hardware. A worker-specific
-  // failure must not strand the lock screen on its old cached image. The
-  // power-button ISR remains part of the downloader cancellation callback, so
-  // unattended fallback socket operations are still bounded to three seconds.
-  if (downloadResult != HttpDownloader::OK && downloadResult != HttpDownloader::ABORTED) {
-    LOG_ERR("REMOTE", "Worker fetch failed (%d); retrying on main task", static_cast<int>(downloadResult));
-    downloadResult = downloadDashboardImage(nullptr);
-  }
-
-  // Exclude rendering while validating and atomically promoting the temp file:
-  // renderCachedImage() may otherwise hold the old image open during rename.
-  {
-    RenderLock lock(*this);
-    if (downloadResult != HttpDownloader::OK) {
-      LOG_ERR("REMOTE", "Image download failed: %d", static_cast<int>(downloadResult));
-      state = State::Failed;
-      errorMessage = tr(STR_REMOTE_IMAGE_FETCH_FAILED);
-    } else if (!validateImageFile(TEMP_PATH)) {
-      Storage.remove(TEMP_PATH);
-      state = State::Failed;
-      errorMessage = tr(STR_REMOTE_IMAGE_INVALID);
-    } else if (!promoteDownloadedImage()) {
-      Storage.remove(TEMP_PATH);
-      state = State::Failed;
-      errorMessage = tr(STR_REMOTE_IMAGE_FETCH_FAILED);
-    } else {
-      cachedImageAvailable = true;
-      state = State::Showing;
-    }
+  if (downloadResult != HttpDownloader::OK) {
+    LOG_ERR("REMOTE", "Image download failed: %d", static_cast<int>(downloadResult));
+    state = State::Failed;
+    errorMessage = tr(STR_REMOTE_IMAGE_FETCH_FAILED);
+  } else if (!validateImageFile(TEMP_PATH)) {
+    Storage.remove(TEMP_PATH);
+    state = State::Failed;
+    errorMessage = tr(STR_REMOTE_IMAGE_INVALID);
+  } else if (!promoteDownloadedImage()) {
+    Storage.remove(TEMP_PATH);
+    state = State::Failed;
+    errorMessage = tr(STR_REMOTE_IMAGE_FETCH_FAILED);
+  } else {
+    cachedImageAvailable = true;
+    state = State::Showing;
   }
 
   if (autoRefresh && powerLatchTriggered()) {
@@ -361,21 +296,16 @@ void RemoteImageDashboardActivity::handleFetchResult() {
   }
 }
 
-HttpDownloader::DownloadError RemoteImageDashboardActivity::downloadDashboardImage(const ActivityWorker* worker) {
+HttpDownloader::DownloadError RemoteImageDashboardActivity::downloadDashboardImage() {
   const unsigned long fetchStartedAt = millis();
-  const auto cancelled = [this, worker]() { return fetchCancellationRequested(worker); };
+  const auto cancelled = [this]() { return autoRefresh && powerLatchTriggered(); };
   const auto remainingBudget = [&]() -> unsigned long {
     const unsigned long elapsed = millis() - fetchStartedAt;
     return elapsed < FETCH_TOTAL_TIMEOUT_MS ? FETCH_TOTAL_TIMEOUT_MS - elapsed : 0;
   };
   const auto fetchOnce = [&](unsigned long budgetMs) {
     HttpDownloader::DownloadOptions options;
-    // The worker leaves the main loop free to handle Power, so its TLS/socket
-    // operations can tolerate real-world Wi-Fi latency. Only the synchronous
-    // diagnostic fallback needs the short cancellation bound.
-    const unsigned long operationTimeoutMs =
-        worker ? FETCH_WORKER_OPERATION_TIMEOUT_MS : FETCH_FALLBACK_OPERATION_TIMEOUT_MS;
-    options.operationTimeoutMs = std::min(operationTimeoutMs, budgetMs);
+    options.operationTimeoutMs = std::min(FETCH_OPERATION_TIMEOUT_MS, budgetMs);
     options.overallTimeoutMs = budgetMs;
     options.bypassCache = true;
     options.cancelRequested = cancelled;
@@ -388,7 +318,7 @@ HttpDownloader::DownloadError RemoteImageDashboardActivity::downloadDashboardIma
 
   LOG_INF("REMOTE", "First image fetch failed (%d); reconnecting once", static_cast<int>(result));
   const unsigned long reconnectBudget = std::min(WIFI_RETRY_TIMEOUT_MS, remainingBudget());
-  if (reconnectBudget == 0 || !reconnectWifiForRetry(reconnectBudget, worker)) {
+  if (reconnectBudget == 0 || !reconnectWifiForRetry(reconnectBudget)) {
     return cancelled() ? HttpDownloader::ABORTED : result;
   }
 
@@ -398,26 +328,22 @@ HttpDownloader::DownloadError RemoteImageDashboardActivity::downloadDashboardIma
   return fetchOnce(retryBudget);
 }
 
-bool RemoteImageDashboardActivity::reconnectWifiForRetry(unsigned long timeoutMs, const ActivityWorker* worker) {
+bool RemoteImageDashboardActivity::reconnectWifiForRetry(unsigned long timeoutMs) {
   const std::string lastSsid = WIFI_STORE.getLastConnectedSsid();
   const WifiCredential* cred = lastSsid.empty() ? nullptr : WIFI_STORE.findCredential(lastSsid);
   if (!cred) return false;
 
   WiFi.disconnect(false);
   delay(50);
-  if (fetchCancellationRequested(worker)) return false;
+  if (powerLatchTriggered()) return false;
   WiFi.begin(cred->ssid.c_str(), cred->password.empty() ? nullptr : cred->password.c_str());
 
   const unsigned long startedAt = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - startedAt < timeoutMs) {
-    if (fetchCancellationRequested(worker)) return false;
+    if (powerLatchTriggered()) return false;
     delay(50);
   }
   return WiFi.status() == WL_CONNECTED;
-}
-
-bool RemoteImageDashboardActivity::fetchCancellationRequested(const ActivityWorker* worker) const {
-  return (worker && worker->cancelRequested()) || (autoRefresh && remotePowerInterruptFired != 0);
 }
 
 void RemoteImageDashboardActivity::startPowerLatch() {
@@ -447,11 +373,8 @@ bool RemoteImageDashboardActivity::powerLatchTriggered() {
 }
 
 void RemoteImageDashboardActivity::returnToUser() {
-  fetchWorker.requestCancel();
   stopPowerLatch();
-  // A running worker may still have the temp file open. The silent restart
-  // below ends the task, and recoverInterruptedSwap() removes the file at boot.
-  if (!fetchWorker.isRunning() && Storage.exists(TEMP_PATH)) Storage.remove(TEMP_PATH);
+  if (Storage.exists(TEMP_PATH)) Storage.remove(TEMP_PATH);
   exitDashboardMode();
 
   // Match a normal power-button wake from dashboard sleep: return to the book
@@ -465,10 +388,6 @@ void RemoteImageDashboardActivity::returnToUser() {
 }
 
 void RemoteImageDashboardActivity::goToSleepAndPoll() {
-  if (fetchWorker.isRunning()) {
-    LOG_ERR("REMOTE", "Refusing to sleep while dashboard fetch is running");
-    return;
-  }
   stopPowerLatch();
   if (powerExitRequested) {
     returnToUser();
@@ -567,7 +486,6 @@ void RemoteImageDashboardActivity::render(RenderLock&&) {
       if (!autoRefresh || !cachedImageAvailable || !renderCachedImage()) {
         renderMessage(tr(STR_REMOTE_IMAGE_UPDATING));
       }
-      if (state == State::Fetching) fetchPresentationComplete.store(true, std::memory_order_release);
       break;
     case State::Failed:
       if (!cachedImageAvailable || !renderCachedImage()) {

@@ -266,17 +266,7 @@ There are two tasks relevant to the activity system:
 
 Both tasks run at priority 1. Since the ESP32-C3 is single-core, they alternate execution: the main task runs `loop()`, then at the end of the loop iteration, notifies the render task if an update was requested. The render task wakes, acquires the mutex, calls `render()`, releases the mutex, and blocks again.
 
-Activities must not call `xTaskCreate` directly. Blocking work that must leave the
-main loop responsive uses `ActivityWorker`, a single-shot, cooperatively
-cancellable task wrapper. Its callback receives a function pointer and context
-rather than `std::function`, and completion is published with atomics so the
-activity can consume results from `loop()`.
-
-The owning activity must request cancellation before exit and must not be
-destroyed while the worker is running. It may either observe `isComplete()` or
-commit to a chip restart, which is the normal Wi-Fi activity cleanup path.
-Worker callbacks must keep activity state mutations on the main task and use
-thread-safe HAL services such as `HalStorage` for shared hardware access.
+Do not use `xTaskCreate` inside activities. If you have a use case that seems to require a background task, open a discussion to propose a lifecycle-aware `Worker` abstraction first.
 
 ### The Render Mutex and RenderLock
 

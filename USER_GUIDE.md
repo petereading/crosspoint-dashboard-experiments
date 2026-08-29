@@ -524,6 +524,8 @@ Remote Image is a generic lock screen for dashboards rendered by an external ser
 
 The device wakes on the timer, reconnects to the last saved Wi-Fi network, downloads the image, validates it, displays
 it, and returns to deep sleep. A failed download or invalid BMP leaves the previous successful image in place.
+The cached image stays visible while the download runs, and the power button remains responsive if you wake the reader
+during a slow or stalled request.
 
 Use an uncompressed BMP at the intended device dimensions (X3: 528×792 portrait; X4: 480×800 portrait, or reversed
 for landscape). The image's aspect ratio controls display orientation. Redirects are supported, but the configured URL

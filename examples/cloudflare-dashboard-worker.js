@@ -407,6 +407,8 @@ function renderWeatherBmp(place, weather, imperial, orientation, device) {
   const daily = weather.daily;
   const tempUnit = imperial ? "F" : "C";
   const windUnit = imperial ? "MPH" : "KM/H";
+  const sunrise = updatedLabel(daily.sunrise?.[0]);
+  const sunset = updatedLabel(daily.sunset?.[0]);
 
   if (orientation === "landscape") {
     const compact = HEIGHT < 500;
@@ -451,6 +453,14 @@ function renderWeatherBmp(place, weather, imperial, orientation, device) {
       compact ? 209 : 231,
       3
     );
+    drawTextCenteredInBox(
+      canvas,
+      `RISE ${sunrise} SET ${sunset}`,
+      505,
+      265,
+      compact ? 232 : 253,
+      2
+    );
 
     const days = Math.min(5, daily.time.length);
     const gap = 8;
@@ -494,7 +504,7 @@ function renderWeatherBmp(place, weather, imperial, orientation, device) {
   drawTextCenteredInBox(canvas, `${Math.round(current.temperature_2m)}${tempUnit}`, temperatureX, WIDTH - temperatureX - 18, 178, 13);
   drawTextCentered(canvas, conditionLabel(current.weather_code), 320, 5, WIDTH - 30);
 
-  drawRect(canvas, 25, 374, WIDTH - 50, 72, 2);
+  drawRect(canvas, 25, 374, WIDTH - 50, 92, 2);
   drawTextCentered(
     canvas,
     `FEELS ${Math.round(current.apparent_temperature)}${tempUnit}   HUM ${Math.round(current.relative_humidity_2m)}%`,
@@ -509,6 +519,7 @@ function renderWeatherBmp(place, weather, imperial, orientation, device) {
     3,
     WIDTH - 70
   );
+  drawTextCentered(canvas, `SUNRISE ${sunrise}   SUNSET ${sunset}`, 445, 2, WIDTH - 70);
 
   const days = Math.min(5, daily.time.length);
   const gap = 7;
@@ -610,7 +621,7 @@ async function fetchWeather(place, imperial) {
   );
   apiUrl.searchParams.set(
     "daily",
-    "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+    "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset"
   );
   apiUrl.searchParams.set("temperature_unit", imperial ? "fahrenheit" : "celsius");
   apiUrl.searchParams.set("wind_speed_unit", imperial ? "mph" : "kmh");

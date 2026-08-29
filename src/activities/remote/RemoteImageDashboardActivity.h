@@ -25,9 +25,10 @@ class RemoteImageDashboardActivity final : public Activity {
   enum class State { Connecting, Fetching, Showing, Failed };
 
   static constexpr unsigned long WIFI_TIMEOUT_MS = 45000;
-  static constexpr unsigned long FETCH_TOTAL_TIMEOUT_MS = 25000;
-  static constexpr unsigned long FETCH_FIRST_ATTEMPT_MS = 9000;
-  static constexpr unsigned long FETCH_OPERATION_TIMEOUT_MS = 3000;
+  static constexpr unsigned long FETCH_TOTAL_TIMEOUT_MS = 30000;
+  static constexpr unsigned long FETCH_FIRST_ATTEMPT_MS = 12000;
+  static constexpr unsigned long FETCH_WORKER_OPERATION_TIMEOUT_MS = 10000;
+  static constexpr unsigned long FETCH_FALLBACK_OPERATION_TIMEOUT_MS = 3000;
   static constexpr unsigned long WIFI_RETRY_TIMEOUT_MS = 5000;
   static constexpr unsigned long DISPLAY_GRACE_INTERACTIVE_MS = 20000;
   // HTTPS/TLS previously ran on Arduino's 8 KB loop stack. Keep the worker at

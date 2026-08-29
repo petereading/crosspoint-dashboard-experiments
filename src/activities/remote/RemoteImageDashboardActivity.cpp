@@ -370,7 +370,12 @@ HttpDownloader::DownloadError RemoteImageDashboardActivity::downloadDashboardIma
   };
   const auto fetchOnce = [&](unsigned long budgetMs) {
     HttpDownloader::DownloadOptions options;
-    options.operationTimeoutMs = std::min(FETCH_OPERATION_TIMEOUT_MS, budgetMs);
+    // The worker leaves the main loop free to handle Power, so its TLS/socket
+    // operations can tolerate real-world Wi-Fi latency. Only the synchronous
+    // diagnostic fallback needs the short cancellation bound.
+    const unsigned long operationTimeoutMs =
+        worker ? FETCH_WORKER_OPERATION_TIMEOUT_MS : FETCH_FALLBACK_OPERATION_TIMEOUT_MS;
+    options.operationTimeoutMs = std::min(operationTimeoutMs, budgetMs);
     options.overallTimeoutMs = budgetMs;
     options.bypassCache = true;
     options.cancelRequested = cancelled;

@@ -22,9 +22,13 @@ class RemoteImageDashboardActivity final : public Activity {
   bool skipLoopDelay() override { return state == State::Connecting || state == State::Fetching; }
   bool preventAutoSleep() override { return autoRefresh || state != State::Failed; }
   // An open card is a display, not a busy task: between refreshes it holds a
-  // static e-ink frame with the radio off, so let the CPU idle down. beginUpdate()
-  // restores full speed before the next connect.
-  bool allowClockThrottle() override { return !autoRefresh && (state == State::Showing || state == State::Failed); }
+  // static e-ink frame with the radio off, so let the CPU idle down --
+  // beginUpdate() restores full speed before the next connect. A card that keeps
+  // its radio associated is the exception, since the WiFi stack is not reliable
+  // at LOW_POWER_FREQ and throttling would undo what keeping it up bought.
+  bool allowClockThrottle() override {
+    return !autoRefresh && !keepRadioBetweenRefreshes() && (state == State::Showing || state == State::Failed);
+  }
 
  private:
   enum class State { Connecting, Fetching, Showing, Failed };
@@ -34,6 +38,10 @@ class RemoteImageDashboardActivity final : public Activity {
   static constexpr unsigned long FETCH_FIRST_ATTEMPT_MS = 18000;
   static constexpr unsigned long FETCH_OPERATION_TIMEOUT_MS = 15000;
   static constexpr unsigned long WIFI_RETRY_TIMEOUT_MS = 7000;
+  // Cards refreshing at or below this interval keep the radio associated
+  // between refreshes; a reconnect costs more time and power than the wait
+  // saves, and is less reliable. See finishInteractiveCycle().
+  static constexpr uint8_t KEEP_RADIO_MAX_INTERVAL_MINUTES = 2;
 
   const Card card;
   const bool autoRefresh;
@@ -63,6 +71,10 @@ class RemoteImageDashboardActivity final : public Activity {
   void beginUpdate();
   void startDirectWifiConnect();
   void promptWifiSelection();
+  bool keepRadioBetweenRefreshes() const { return refreshMinutes() <= KEEP_RADIO_MAX_INTERVAL_MINUTES; }
+  // Associated AND holding a lease. WL_CONNECTED alone has been seen with no
+  // usable route, which turns into a fetch that burns its whole budget.
+  static bool wifiReady();
   void shutdownWifi();
   void finishInteractiveCycle();
   void runFetch();

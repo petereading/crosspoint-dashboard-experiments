@@ -169,7 +169,7 @@ void RemoteImageDashboardActivity::beginUpdate() {
   // any WiFi call, not at the end of the loop iteration where skipLoopDelay acts.
   powerManager.setPowerSaving(false);
 
-  if (WiFi.status() == WL_CONNECTED) {
+  if (wifiReady()) {
     state = State::Fetching;
     snprintf(statusDetail, sizeof(statusDetail), "fetching");
     if (!autoRefresh && !cachedImageAvailable) requestUpdate();
@@ -221,6 +221,10 @@ void RemoteImageDashboardActivity::startDirectWifiConnect() {
   wifiConnectStart = millis();
 }
 
+bool RemoteImageDashboardActivity::wifiReady() {
+  return WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0, 0, 0, 0);
+}
+
 void RemoteImageDashboardActivity::promptWifiSelection() {
   // Keep the connect deadline armed across the picker so a resumed Connecting
   // state can never see a stale zero and time out on its first poll.
@@ -244,11 +248,20 @@ void RemoteImageDashboardActivity::shutdownWifi() {
   LOG_DBG("REMOTE", "Radio off until the next refresh");
 }
 
-// End of an interactive refresh: drop the radio and arm the next one. The card
-// stays on screen, and allowClockThrottle() now lets the CPU idle down too, so
-// the wait costs about as much as a static sleep screen.
+// End of an interactive refresh: arm the next one, and drop the radio if the
+// wait is long enough to be worth it. The card stays on screen, and
+// allowClockThrottle() lets the CPU idle down, so a long wait costs about as
+// much as a static sleep screen.
+//
+// A short interval is the exception. Bringing the radio up costs ten to twenty
+// seconds of association, DHCP and a TLS handshake, so at one minute the device
+// would spend a third of its time connecting -- and reconnecting that often
+// proved unreliable in practice: the second Clock refresh associated but its
+// fetch then ran out its whole budget. Staying associated through a short wait
+// is both cheaper and steadier; modem sleep already idles the radio between
+// requests.
 void RemoteImageDashboardActivity::finishInteractiveCycle() {
-  shutdownWifi();
+  if (refreshMinutes() > KEEP_RADIO_MAX_INTERVAL_MINUTES) shutdownWifi();
   scheduleNextInteractiveRefresh();
 }
 
@@ -272,7 +285,7 @@ void RemoteImageDashboardActivity::loop() {
 
   switch (state) {
     case State::Connecting:
-      if (WiFi.status() == WL_CONNECTED) {
+      if (wifiReady()) {
         state = State::Fetching;
         snprintf(statusDetail, sizeof(statusDetail), "fetching");
         return;
@@ -900,11 +913,16 @@ bool RemoteImageDashboardActivity::renderCachedImage() const {
 void RemoteImageDashboardActivity::drawStatusFooter(const int pageWidth, const int pageHeight) const {
   if (autoRefresh || statusDetail[0] == '\0') return;
 
-  constexpr int BAR_HEIGHT = 16;
-  const int barTop = pageHeight - BAR_HEIGHT;
-  renderer.fillRect(0, barTop, pageWidth, BAR_HEIGHT, false);
-  renderer.drawLine(0, barTop, pageWidth, barTop, true);
-  renderer.drawCenteredText(SMALL_FONT_ID, barTop + 3, statusDetail);
+  // Sit above the physical bezel, not at the raw panel edge, or the line is
+  // half-hidden behind the case.
+  int marginTop = 0, marginRight = 0, marginBottom = 0, marginLeft = 0;
+  renderer.getOrientedViewableTRBL(&marginTop, &marginRight, &marginBottom, &marginLeft);
+
+  constexpr int BAR_HEIGHT = 18;
+  const int barTop = pageHeight - marginBottom - BAR_HEIGHT;
+  renderer.fillRect(marginLeft, barTop, pageWidth - marginLeft - marginRight, BAR_HEIGHT, false);
+  renderer.drawLine(marginLeft, barTop, pageWidth - marginRight, barTop, true);
+  renderer.drawCenteredText(SMALL_FONT_ID, barTop + 4, statusDetail);
 }
 
 void RemoteImageDashboardActivity::renderDefaultSleepScreen() const {

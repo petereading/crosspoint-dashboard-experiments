@@ -65,6 +65,7 @@ void RemoteImageDashboardActivity::onEnter() {
     if (autoRefresh) {
       state = State::Failed;
       errorMessage = tr(STR_REMOTE_IMAGE_HTTPS_REQUIRED);
+      failureStage = "URL MISSING";
       requestUpdate();
       return;
     }
@@ -75,6 +76,7 @@ void RemoteImageDashboardActivity::onEnter() {
   if (!RemoteImageValidation::isHttpsUrl(dashboardUrl())) {
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_HTTPS_REQUIRED);
+    failureStage = "URL INVALID";
     requestUpdate();
     return;
   }
@@ -131,6 +133,8 @@ void RemoteImageDashboardActivity::promptUrl() {
 void RemoteImageDashboardActivity::beginUpdate() {
   state = State::Connecting;
   errorMessage = nullptr;
+  failureStage = nullptr;
+  downloadDiagnostics = {};
   sleepAt = 0;
 
   if (WiFi.status() == WL_CONNECTED) {
@@ -168,6 +172,7 @@ void RemoteImageDashboardActivity::startDirectWifiConnect() {
     LOG_ERR("REMOTE", "No saved WiFi network for unattended refresh");
     state = State::Failed;
     errorMessage = tr(STR_DASHBOARD_WIFI_FAILED);
+    failureStage = "WIFI CREDENTIALS";
     return;
   }
 
@@ -210,6 +215,7 @@ void RemoteImageDashboardActivity::loop() {
         LOG_ERR("REMOTE", "Unattended WiFi connect timed out");
         state = State::Failed;
         errorMessage = tr(STR_DASHBOARD_WIFI_FAILED);
+        failureStage = "WIFI TIMEOUT";
         requestUpdateAndWait();
         if (powerLatchTriggered()) {
           returnToUser();
@@ -259,6 +265,7 @@ void RemoteImageDashboardActivity::runFetch() {
 
   LOG_INF("REMOTE", "Downloading configured dashboard image");
   const auto downloadResult = downloadDashboardImage();
+  downloadDiagnostics = HttpDownloader::getLastDownloadDiagnostics();
   if (downloadResult == HttpDownloader::ABORTED && autoRefresh && powerLatchTriggered()) {
     LOG_INF("REMOTE", "Dashboard download cancelled by power button");
     returnToUser();
@@ -268,14 +275,17 @@ void RemoteImageDashboardActivity::runFetch() {
     LOG_ERR("REMOTE", "Image download failed: %d", static_cast<int>(downloadResult));
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_FETCH_FAILED);
+    failureStage = "DOWNLOAD";
   } else if (!validateImageFile(tempPath())) {
     Storage.remove(tempPath());
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_INVALID);
+    failureStage = "BMP VALIDATION";
   } else if (!promoteDownloadedImage()) {
     Storage.remove(tempPath());
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_FETCH_FAILED);
+    failureStage = "CACHE REPLACE";
   } else {
     cachedImageAvailable = true;
     state = State::Showing;
@@ -614,13 +624,7 @@ void RemoteImageDashboardActivity::render(RenderLock&&) {
       }
       break;
     case State::Failed:
-      if (!cachedImageAvailable || !renderCachedImage()) {
-        if (autoRefresh) {
-          renderDefaultSleepScreen();
-        } else {
-          renderMessage(errorMessage ? errorMessage : tr(STR_REMOTE_IMAGE_FETCH_FAILED));
-        }
-      }
+      renderFailure();
       break;
     case State::Showing:
       if (!renderCachedImage()) {
@@ -682,6 +686,65 @@ void RemoteImageDashboardActivity::renderMessage(const char* message) const {
   renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 5, message);
 
   if (!autoRefresh && state == State::Failed) {
+    const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_REMOTE_IMAGE_CHANGE_URL), "", "");
+    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+  }
+  renderer.displayBuffer();
+}
+
+void RemoteImageDashboardActivity::renderFailure() const {
+  const int pageHeight = renderer.getScreenHeight();
+  renderer.clearScreen();
+  renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 100, title(), true, EpdFontFamily::BOLD);
+  renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 55, "REFRESH DIAGNOSTIC", true, EpdFontFamily::BOLD);
+  renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 15, failureStage ? failureStage : "UNKNOWN");
+
+  const char* stage = "NONE";
+  switch (downloadDiagnostics.stage) {
+    case HttpDownloader::DiagnosticStage::Cancelled:
+      stage = "CANCELLED";
+      break;
+    case HttpDownloader::DiagnosticStage::TimedOut:
+      stage = "TIMEOUT";
+      break;
+    case HttpDownloader::DiagnosticStage::ClientInit:
+      stage = "CLIENT INIT";
+      break;
+    case HttpDownloader::DiagnosticStage::Open:
+      stage = "HTTPS OPEN";
+      break;
+    case HttpDownloader::DiagnosticStage::Headers:
+      stage = "HTTP HEADERS";
+      break;
+    case HttpDownloader::DiagnosticStage::HttpStatus:
+      stage = "HTTP STATUS";
+      break;
+    case HttpDownloader::DiagnosticStage::Read:
+      stage = "BODY READ";
+      break;
+    case HttpDownloader::DiagnosticStage::Incomplete:
+      stage = "INCOMPLETE BODY";
+      break;
+    case HttpDownloader::DiagnosticStage::FileOpen:
+      stage = "SD FILE OPEN";
+      break;
+    case HttpDownloader::DiagnosticStage::FileWrite:
+      stage = "SD FILE WRITE";
+      break;
+    case HttpDownloader::DiagnosticStage::Empty:
+      stage = "EMPTY RESPONSE";
+      break;
+    case HttpDownloader::DiagnosticStage::None:
+      break;
+  }
+  renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 20, stage);
+
+  char details[80];
+  snprintf(details, sizeof(details), "ERR %d   HTTP %d   BYTES %u", downloadDiagnostics.errorCode,
+           downloadDiagnostics.httpStatus, static_cast<unsigned>(downloadDiagnostics.bytesReceived));
+  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 55, details);
+
+  if (!autoRefresh) {
     const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_REMOTE_IMAGE_CHANGE_URL), "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   }

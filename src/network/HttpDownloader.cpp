@@ -25,6 +25,12 @@ constexpr int HTTP_TX_BUF = 1024;
 // HTTPClient's uint16 setTimeout it doesn't silently truncate.
 constexpr int HTTP_TIMEOUT_MS = 60000;
 constexpr size_t READ_CHUNK = 2048;
+HttpDownloader::DownloadDiagnostics lastDownloadDiagnostics;
+
+void setDiagnostics(HttpDownloader::DiagnosticStage stage, int errorCode = 0, int httpStatus = 0,
+                    size_t bytesReceived = 0) {
+  lastDownloadDiagnostics = {stage, errorCode, httpStatus, bytesReceived};
+}
 
 struct Sink {
   std::function<bool(const uint8_t*, size_t)> write;  // returns false to abort the transfer
@@ -40,10 +46,12 @@ struct Sink {
 
 bool interrupted(const Sink& sink, HttpDownloader::DownloadError* result) {
   if (sink.cancelRequested && sink.cancelRequested()) {
+    setDiagnostics(HttpDownloader::DiagnosticStage::Cancelled, 0, 0, sink.downloaded);
     *result = HttpDownloader::ABORTED;
     return true;
   }
   if (sink.overallTimeoutMs != 0 && millis() - sink.startedAtMs >= sink.overallTimeoutMs) {
+    setDiagnostics(HttpDownloader::DiagnosticStage::TimedOut, 0, 0, sink.downloaded);
     *result = HttpDownloader::TIMED_OUT;
     return true;
   }
@@ -77,6 +85,7 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
 
   esp_http_client_handle_t client = esp_http_client_init(&config);
   if (!client) {
+    setDiagnostics(HttpDownloader::DiagnosticStage::ClientInit);
     LOG_ERR("HTTP", "client init failed");
     return HttpDownloader::HTTP_ERROR;
   }
@@ -104,11 +113,17 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
 
   esp_err_t err = esp_http_client_open(client, 0);
   if (err != ESP_OK) {
+    setDiagnostics(HttpDownloader::DiagnosticStage::Open, static_cast<int>(err), 0, sink.downloaded);
     LOG_ERR("HTTP", "open failed: %s", esp_err_to_name(err));
     esp_http_client_cleanup(client);
     return HttpDownloader::HTTP_ERROR;
   }
   int64_t contentLength = esp_http_client_fetch_headers(client);
+  if (contentLength < 0) {
+    setDiagnostics(HttpDownloader::DiagnosticStage::Headers, static_cast<int>(contentLength), 0, sink.downloaded);
+    esp_http_client_cleanup(client);
+    return HttpDownloader::HTTP_ERROR;
+  }
   if (interrupted(sink, &stopResult)) {
     esp_http_client_cleanup(client);
     return stopResult;
@@ -122,11 +137,18 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
     if (esp_http_client_set_redirection(client) != ESP_OK) break;
     err = esp_http_client_open(client, 0);
     if (err != ESP_OK) {
+      setDiagnostics(HttpDownloader::DiagnosticStage::Open, static_cast<int>(err), status, sink.downloaded);
       LOG_ERR("HTTP", "redirect open failed: %s", esp_err_to_name(err));
       esp_http_client_cleanup(client);
       return HttpDownloader::HTTP_ERROR;
     }
     contentLength = esp_http_client_fetch_headers(client);
+    if (contentLength < 0) {
+      setDiagnostics(HttpDownloader::DiagnosticStage::Headers, static_cast<int>(contentLength), status,
+                     sink.downloaded);
+      esp_http_client_cleanup(client);
+      return HttpDownloader::HTTP_ERROR;
+    }
     if (interrupted(sink, &stopResult)) {
       esp_http_client_cleanup(client);
       return stopResult;
@@ -135,6 +157,7 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
   }
 
   if (status != 200) {
+    setDiagnostics(HttpDownloader::DiagnosticStage::HttpStatus, 0, status, sink.downloaded);
     LOG_ERR("HTTP", "unexpected status: %d", status);
     esp_http_client_cleanup(client);
     return HttpDownloader::HTTP_ERROR;
@@ -146,6 +169,7 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
 
   auto buf = makeUniqueNoThrow<char[]>(READ_CHUNK);
   if (!buf) {
+    setDiagnostics(HttpDownloader::DiagnosticStage::ClientInit, -1, status, sink.downloaded);
     LOG_ERR("HTTP", "OOM: %u byte read buffer", (unsigned)READ_CHUNK);
     esp_http_client_cleanup(client);
     return HttpDownloader::HTTP_ERROR;
@@ -158,6 +182,7 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
     }
     const int read = esp_http_client_read(client, buf.get(), READ_CHUNK);
     if (read < 0) {
+      setDiagnostics(HttpDownloader::DiagnosticStage::Read, read, status, sink.downloaded);
       LOG_ERR("HTTP", "read error after %zu bytes", sink.downloaded);
       esp_http_client_cleanup(client);
       return HttpDownloader::HTTP_ERROR;
@@ -169,10 +194,12 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
         return stopResult;
       }
       LOG_ERR("HTTP", "read stalled after %zu bytes", sink.downloaded);
+      setDiagnostics(HttpDownloader::DiagnosticStage::Read, 0, status, sink.downloaded);
       esp_http_client_cleanup(client);
       return HttpDownloader::HTTP_ERROR;
     }
     if (!sink.write(reinterpret_cast<const uint8_t*>(buf.get()), read)) {
+      setDiagnostics(HttpDownloader::DiagnosticStage::FileWrite, 0, status, sink.downloaded);
       esp_http_client_cleanup(client);
       return HttpDownloader::FILE_ERROR;
     }
@@ -183,9 +210,11 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
   const bool complete = esp_http_client_is_complete_data_received(client);
   esp_http_client_cleanup(client);
   if (!complete) {
+    setDiagnostics(HttpDownloader::DiagnosticStage::Incomplete, 0, status, sink.downloaded);
     LOG_ERR("HTTP", "incomplete: got %zu of %zu bytes", sink.downloaded, sink.total);
     return HttpDownloader::HTTP_ERROR;
   }
+  setDiagnostics(HttpDownloader::DiagnosticStage::None, 0, status, sink.downloaded);
   return HttpDownloader::OK;
 }
 }  // namespace
@@ -230,12 +259,14 @@ HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& 
                                                              const DownloadOptions& options, ProgressCallback progress,
                                                              const std::string& username, const std::string& password) {
   LOG_DBG("HTTP", "Downloading: %s -> %s", url.c_str(), destPath.c_str());
+  setDiagnostics(HttpDownloader::DiagnosticStage::None);
 
   if (Storage.exists(destPath.c_str())) {
     Storage.remove(destPath.c_str());
   }
   HalFile file;
   if (!Storage.openFileForWrite("HTTP", destPath.c_str(), file)) {
+    setDiagnostics(HttpDownloader::DiagnosticStage::FileOpen);
     LOG_ERR("HTTP", "Failed to open file for writing");
     return FILE_ERROR;
   }
@@ -259,6 +290,7 @@ HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& 
     return result;
   }
   if (sink.downloaded == 0) {
+    setDiagnostics(HttpDownloader::DiagnosticStage::Empty);
     LOG_ERR("HTTP", "no data received");
     Storage.remove(destPath.c_str());
     return HTTP_ERROR;
@@ -266,3 +298,5 @@ HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& 
   LOG_DBG("HTTP", "Downloaded %zu bytes", sink.downloaded);
   return OK;
 }
+
+HttpDownloader::DownloadDiagnostics HttpDownloader::getLastDownloadDiagnostics() { return lastDownloadDiagnostics; }

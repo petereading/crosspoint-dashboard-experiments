@@ -20,7 +20,7 @@ class RemoteImageDashboardActivity final : public Activity {
   void loop() override;
   void render(RenderLock&&) override;
   bool skipLoopDelay() override { return state == State::Connecting || state == State::Fetching; }
-  bool preventAutoSleep() override { return autoRefresh || state != State::Failed; }
+  bool preventAutoSleep() override { return true; }
 
  private:
   enum class State { Connecting, Fetching, Showing, Failed };
@@ -44,6 +44,8 @@ class RemoteImageDashboardActivity final : public Activity {
   unsigned long wifiConnectStart = 0;
   unsigned long sleepAt = 0;
   const char* errorMessage = nullptr;
+  HttpDownloader::DownloadDiagnostics downloadDiagnostics;
+  const char* failureStage = nullptr;
 
   void promptUrl();
   void beginUpdate();
@@ -76,4 +78,5 @@ class RemoteImageDashboardActivity final : public Activity {
   bool renderCachedImage() const;
   void renderDefaultSleepScreen() const;
   void renderMessage(const char* message) const;
+  void renderFailure() const;
 };

@@ -15,6 +15,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <string>
 
@@ -274,6 +275,7 @@ void RemoteImageDashboardActivity::loop() {
         LOG_ERR("REMOTE", "WiFi connect timed out");
         state = State::Failed;
         errorMessage = tr(STR_DASHBOARD_WIFI_FAILED);
+        snprintf(failureDetail, sizeof(failureDetail), "WiFi connect timed out");
         requestUpdateAndWait();
         if (!autoRefresh) {
           // Keep the card on screen and retry on its normal interval.
@@ -329,6 +331,7 @@ void RemoteImageDashboardActivity::runFetch() {
   Storage.mkdir("/.crosspoint");
 
   LOG_INF("REMOTE", "Downloading configured dashboard image");
+  lastHttpStatus = 0;
   const auto downloadResult = downloadDashboardImage();
   if (downloadResult == HttpDownloader::ABORTED && autoRefresh && powerLatchTriggered()) {
     LOG_INF("REMOTE", "Dashboard download cancelled by power button");
@@ -336,20 +339,42 @@ void RemoteImageDashboardActivity::runFetch() {
     return;
   }
   if (downloadResult != HttpDownloader::OK) {
-    LOG_ERR("REMOTE", "Image download failed: %d", static_cast<int>(downloadResult));
+    LOG_ERR("REMOTE", "Image download failed: %d (HTTP %d)", static_cast<int>(downloadResult), lastHttpStatus);
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_FETCH_FAILED);
+    switch (downloadResult) {
+      case HttpDownloader::TIMED_OUT:
+        snprintf(failureDetail, sizeof(failureDetail), "fetch timed out");
+        break;
+      case HttpDownloader::FILE_ERROR:
+        snprintf(failureDetail, sizeof(failureDetail), "SD write failed");
+        break;
+      case HttpDownloader::ABORTED:
+        snprintf(failureDetail, sizeof(failureDetail), "fetch cancelled");
+        break;
+      default:
+        if (lastHttpStatus > 0) {
+          snprintf(failureDetail, sizeof(failureDetail), "HTTP %d from worker", lastHttpStatus);
+        } else {
+          // Never got a status line: DNS, TCP, or the TLS handshake.
+          snprintf(failureDetail, sizeof(failureDetail), "no reply from worker");
+        }
+        break;
+    }
   } else if (!validateImageFile(tempPath())) {
     Storage.remove(tempPath());
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_INVALID);
+    snprintf(failureDetail, sizeof(failureDetail), "bad image: %s", lastBmpError);
   } else if (!promoteDownloadedImage()) {
     Storage.remove(tempPath());
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_FETCH_FAILED);
+    snprintf(failureDetail, sizeof(failureDetail), "cache swap failed");
   } else {
     cachedImageAvailable = true;
     state = State::Showing;
+    failureDetail[0] = '\0';
   }
 
   if (autoRefresh && powerLatchTriggered()) {
@@ -382,6 +407,7 @@ HttpDownloader::DownloadError RemoteImageDashboardActivity::downloadDashboardIma
     options.overallTimeoutMs = budgetMs;
     options.bypassCache = true;
     options.cancelRequested = cancelled;
+    options.outHttpStatus = &lastHttpStatus;
     return HttpDownloader::downloadToFile(dashboardUrl(), tempPath(), options);
   };
 
@@ -734,7 +760,7 @@ void RemoteImageDashboardActivity::recoverInterruptedSwap() {
   if (Storage.exists("/.crosspoint/remote-image.bak")) Storage.remove("/.crosspoint/remote-image.bak");
 }
 
-bool RemoteImageDashboardActivity::validateImageFile(const char* path) const {
+bool RemoteImageDashboardActivity::validateImageFile(const char* path) {
   HalFile file;
   if (!Storage.openFileForRead("REMOTE", path, file)) return false;
 
@@ -742,12 +768,16 @@ bool RemoteImageDashboardActivity::validateImageFile(const char* path) const {
   const uint64_t fileSize = file.fileSize64();
   const int bytesRead = file.read(header.data(), header.size());
   file.close();
-  if (bytesRead != static_cast<int>(header.size())) return false;
+  if (bytesRead != static_cast<int>(header.size())) {
+    lastBmpError = "short read";
+    return false;
+  }
 
   RemoteImageValidation::BmpInfo info;
   const auto result = RemoteImageValidation::validateBmp(header.data(), header.size(), fileSize, &info);
   if (result != RemoteImageValidation::BmpError::Ok) {
-    LOG_ERR("REMOTE", "BMP validation failed: %s", RemoteImageValidation::errorToString(result));
+    lastBmpError = RemoteImageValidation::errorToString(result);
+    LOG_ERR("REMOTE", "BMP validation failed: %s", lastBmpError);
     return false;
   }
 
@@ -757,7 +787,8 @@ bool RemoteImageDashboardActivity::validateImageFile(const char* path) const {
   const auto bitmapResult = bitmap.parseHeaders();
   bitmapFile.close();
   if (bitmapResult != BmpReaderError::Ok) {
-    LOG_ERR("REMOTE", "BMP renderer rejected image: %s", Bitmap::errorToString(bitmapResult));
+    lastBmpError = Bitmap::errorToString(bitmapResult);
+    LOG_ERR("REMOTE", "BMP renderer rejected image: %s", lastBmpError);
     return false;
   }
 
@@ -845,10 +876,25 @@ bool RemoteImageDashboardActivity::renderCachedImage() const {
 
   renderer.clearScreen();
   renderer.drawBitmap(bitmap, x, y, pageWidth, pageHeight);
+  drawFailureFooter(pageWidth, pageHeight);
   renderer.displayBuffer(HalDisplay::FULL_REFRESH);
   renderer.setOrientation(originalOrientation);
   file.close();
   return true;
+}
+
+// A failed refresh leaves the previous card on screen, so without this the card
+// just looks stale. Only on an open card: an unattended lock screen should stay
+// clean, and the reason is in the serial log either way. The text is diagnostic
+// rather than prose, so it is deliberately not run through tr().
+void RemoteImageDashboardActivity::drawFailureFooter(const int pageWidth, const int pageHeight) const {
+  if (autoRefresh || failureDetail[0] == '\0') return;
+
+  constexpr int BAR_HEIGHT = 16;
+  const int barTop = pageHeight - BAR_HEIGHT;
+  renderer.fillRect(0, barTop, pageWidth, BAR_HEIGHT, false);
+  renderer.drawLine(0, barTop, pageWidth, barTop, true);
+  renderer.drawCenteredText(SMALL_FONT_ID, barTop + 3, failureDetail);
 }
 
 void RemoteImageDashboardActivity::renderDefaultSleepScreen() const {
@@ -867,6 +913,9 @@ void RemoteImageDashboardActivity::renderMessage(const char* message) const {
   renderer.clearScreen();
   renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 30, title(), true, EpdFontFamily::BOLD);
   renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 5, message);
+  if (failureDetail[0] != '\0') {
+    renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 30, failureDetail);
+  }
 
   if (!autoRefresh && state == State::Failed) {
     const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_REMOTE_IMAGE_CHANGE_URL), "", "");

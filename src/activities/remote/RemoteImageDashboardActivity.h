@@ -47,6 +47,15 @@ class RemoteImageDashboardActivity final : public Activity {
   unsigned long wifiConnectStart = 0;
   unsigned long nextInteractiveRefreshAt = 0;
   const char* errorMessage = nullptr;
+  // Why the last refresh failed, in technical terms ("HTTP 404", "bad image:
+  // NotBmp"). A failed refresh keeps the last good card on screen, which is
+  // right for an unattended lock screen but leaves an open card looking merely
+  // stale, so an interactive card shows this in a footer. Fixed buffer: no
+  // allocation on an error path. Empty once a refresh succeeds.
+  char failureDetail[48] = {};
+  int lastHttpStatus = 0;
+  // Points into RemoteImageValidation's static strings, so it needs no storage.
+  const char* lastBmpError = "unknown";
 
   void promptUrl();
   void beginUpdate();
@@ -78,9 +87,10 @@ class RemoteImageDashboardActivity final : public Activity {
   uint8_t activeDashboardMode() const;
 
   void recoverInterruptedSwap();
-  bool validateImageFile(const char* path) const;
+  bool validateImageFile(const char* path);
   bool promoteDownloadedImage();
   bool renderCachedImage() const;
+  void drawFailureFooter(int pageWidth, int pageHeight) const;
   void renderDefaultSleepScreen() const;
   void renderMessage(const char* message) const;
 };

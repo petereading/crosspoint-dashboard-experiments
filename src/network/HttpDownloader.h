@@ -31,6 +31,10 @@ class HttpDownloader {
     uint32_t overallTimeoutMs = 0;
     bool bypassCache = false;
     CancelCallback cancelRequested;
+    // Optional: receives the final HTTP status (after redirects), or 0 if the
+    // request never got that far. Lets a caller report "HTTP 500" instead of the
+    // undifferentiated HTTP_ERROR when a transfer fails.
+    int* outHttpStatus = nullptr;
   };
 
   /**

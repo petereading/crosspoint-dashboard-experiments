@@ -34,6 +34,7 @@ struct Sink {
   uint32_t overallTimeoutMs = 0;
   unsigned long startedAtMs = 0;
   bool bypassCache = false;
+  int* outHttpStatus = nullptr;
   size_t total = 0;
   size_t downloaded = 0;
 };
@@ -133,6 +134,8 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
     }
     status = esp_http_client_get_status_code(client);
   }
+
+  if (sink.outHttpStatus) *sink.outHttpStatus = status;
 
   if (status != 200) {
     LOG_ERR("HTTP", "unexpected status: %d", status);
@@ -247,6 +250,7 @@ HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& 
   sink.overallTimeoutMs = options.overallTimeoutMs;
   sink.startedAtMs = millis();
   sink.bypassCache = options.bypassCache;
+  sink.outHttpStatus = options.outHttpStatus;
   sink.write = [&file](const uint8_t* data, size_t len) { return file.write(data, len) == len; };
 
   const DownloadError result = runGet(url, username, password, sink);

@@ -118,7 +118,7 @@ bool JsonSettingsIO::loadState(CrossPointState& s, const char* json) {
   s.lastSleepFromReader = doc["lastSleepFromReader"] | false;
   s.showBootScreen = doc["showBootScreen"] | true;
   s.activeDashboardMode = doc["activeDashboardMode"] | static_cast<uint8_t>(0);
-  if (s.activeDashboardMode > CrossPointState::DASHBOARD_REMOTE_SOLAR) {
+  if (s.activeDashboardMode > CrossPointState::DASHBOARD_CUSTOM_IMAGE) {
     s.activeDashboardMode = CrossPointState::DASHBOARD_NONE;
   }
   s.tempestTrendRefPressureInHg = doc["tempestTrendRefPressureInHg"] | 0.0f;

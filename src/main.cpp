@@ -525,24 +525,6 @@ void setup() {
   } else if (dashboardResume == CrossPointState::DASHBOARD_CUSTOM_IMAGE) {
     activityManager.replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
         renderer, mappedInputManager, RemoteImageDashboardActivity::Card::CustomImage, /*autoRefresh=*/true));
-  } else if (dashboardResume == CrossPointState::DASHBOARD_REMOTE_MOON) {
-    activityManager.replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
-        renderer, mappedInputManager, RemoteImageDashboardActivity::Card::Moon, /*autoRefresh=*/true));
-  } else if (dashboardResume == CrossPointState::DASHBOARD_REMOTE_RSS) {
-    activityManager.replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
-        renderer, mappedInputManager, RemoteImageDashboardActivity::Card::Rss, /*autoRefresh=*/true));
-  } else if (dashboardResume == CrossPointState::DASHBOARD_REMOTE_TODAY) {
-    activityManager.replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
-        renderer, mappedInputManager, RemoteImageDashboardActivity::Card::Today, /*autoRefresh=*/true));
-  } else if (dashboardResume == CrossPointState::DASHBOARD_REMOTE_QUOTE) {
-    activityManager.replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
-        renderer, mappedInputManager, RemoteImageDashboardActivity::Card::Quote, /*autoRefresh=*/true));
-  } else if (dashboardResume == CrossPointState::DASHBOARD_REMOTE_BITCOIN) {
-    activityManager.replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
-        renderer, mappedInputManager, RemoteImageDashboardActivity::Card::Bitcoin, /*autoRefresh=*/true));
-  } else if (dashboardResume == CrossPointState::DASHBOARD_REMOTE_SOLAR) {
-    activityManager.replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
-        renderer, mappedInputManager, RemoteImageDashboardActivity::Card::Solar, /*autoRefresh=*/true));
   } else if (recoveryFirmwareMode) {
     // Skip normal home/reader routing: jump straight into the SD firmware picker.
     activityManager.replaceActivity(

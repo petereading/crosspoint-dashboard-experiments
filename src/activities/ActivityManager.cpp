@@ -199,48 +199,18 @@ void ActivityManager::goToBrowser() {
 }
 
 void ActivityManager::goToClockDashboard() {
-  pushActivity(
+  replaceActivity(
       std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, RemoteImageDashboardActivity::Card::Clock));
 }
 
 void ActivityManager::goToWeatherDashboard() {
-  pushActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput,
-                                                              RemoteImageDashboardActivity::Card::Weather));
+  replaceActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput,
+                                                                 RemoteImageDashboardActivity::Card::Weather));
 }
 
 void ActivityManager::goToCustomImageDashboard() {
-  pushActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput,
-                                                              RemoteImageDashboardActivity::Card::CustomImage));
-}
-
-void ActivityManager::goToMoonDashboard() {
-  pushActivity(
-      std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, RemoteImageDashboardActivity::Card::Moon));
-}
-
-void ActivityManager::goToRssDashboard() {
-  pushActivity(
-      std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, RemoteImageDashboardActivity::Card::Rss));
-}
-
-void ActivityManager::goToTodayDashboard() {
-  pushActivity(
-      std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, RemoteImageDashboardActivity::Card::Today));
-}
-
-void ActivityManager::goToQuoteDashboard() {
-  pushActivity(
-      std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, RemoteImageDashboardActivity::Card::Quote));
-}
-
-void ActivityManager::goToBitcoinDashboard() {
-  pushActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput,
-                                                              RemoteImageDashboardActivity::Card::Bitcoin));
-}
-
-void ActivityManager::goToSolarDashboard() {
-  pushActivity(
-      std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, RemoteImageDashboardActivity::Card::Solar));
+  replaceActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput,
+                                                                 RemoteImageDashboardActivity::Card::CustomImage));
 }
 
 void ActivityManager::goToLockScreens() {
@@ -256,30 +226,6 @@ void ActivityManager::goToLockScreenDashboard() {
     case CrossPointSettings::SLEEP_LOCK_CUSTOM_IMAGE:
       replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
           renderer, mappedInput, RemoteImageDashboardActivity::Card::CustomImage, /*autoRefresh=*/true));
-      break;
-    case CrossPointSettings::SLEEP_LOCK_MOON:
-      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
-          renderer, mappedInput, RemoteImageDashboardActivity::Card::Moon, /*autoRefresh=*/true));
-      break;
-    case CrossPointSettings::SLEEP_LOCK_RSS:
-      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
-          renderer, mappedInput, RemoteImageDashboardActivity::Card::Rss, /*autoRefresh=*/true));
-      break;
-    case CrossPointSettings::SLEEP_LOCK_TODAY:
-      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
-          renderer, mappedInput, RemoteImageDashboardActivity::Card::Today, /*autoRefresh=*/true));
-      break;
-    case CrossPointSettings::SLEEP_LOCK_QUOTE:
-      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
-          renderer, mappedInput, RemoteImageDashboardActivity::Card::Quote, /*autoRefresh=*/true));
-      break;
-    case CrossPointSettings::SLEEP_LOCK_BITCOIN:
-      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
-          renderer, mappedInput, RemoteImageDashboardActivity::Card::Bitcoin, /*autoRefresh=*/true));
-      break;
-    case CrossPointSettings::SLEEP_LOCK_SOLAR:
-      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
-          renderer, mappedInput, RemoteImageDashboardActivity::Card::Solar, /*autoRefresh=*/true));
       break;
     default:
       replaceActivity(std::make_unique<RemoteImageDashboardActivity>(

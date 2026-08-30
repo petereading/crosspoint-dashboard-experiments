@@ -1,9 +1,5 @@
 #pragma once
 
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-
-#include <atomic>
 #include <string>
 
 #include "activities/Activity.h"
@@ -13,7 +9,7 @@
 // validation, display, and timed sleep; dashboard generation stays off-device.
 class RemoteImageDashboardActivity final : public Activity {
  public:
-  enum class Card { Clock, Weather, CustomImage, Moon, Rss, Today, Quote, Bitcoin, Solar };
+  enum class Card { Clock, Weather, CustomImage };
 
   explicit RemoteImageDashboardActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, Card card,
                                         bool autoRefresh = false)
@@ -23,17 +19,18 @@ class RemoteImageDashboardActivity final : public Activity {
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
-  bool skipLoopDelay() override { return state == State::Connecting || (autoRefresh && state == State::Fetching); }
+  bool skipLoopDelay() override { return state == State::Connecting || state == State::Fetching; }
   bool preventAutoSleep() override { return autoRefresh || state != State::Failed; }
 
  private:
   enum class State { Connecting, Fetching, Showing, Failed };
 
   static constexpr unsigned long WIFI_TIMEOUT_MS = 45000;
-  static constexpr unsigned long FETCH_TOTAL_TIMEOUT_MS = 60000;
-  static constexpr unsigned long FETCH_FIRST_ATTEMPT_MS = 30000;
-  static constexpr unsigned long FETCH_OPERATION_TIMEOUT_MS = 20000;
-  static constexpr unsigned long WIFI_RETRY_TIMEOUT_MS = 8000;
+  static constexpr unsigned long FETCH_TOTAL_TIMEOUT_MS = 25000;
+  static constexpr unsigned long FETCH_FIRST_ATTEMPT_MS = 9000;
+  static constexpr unsigned long FETCH_OPERATION_TIMEOUT_MS = 3000;
+  static constexpr unsigned long WIFI_RETRY_TIMEOUT_MS = 5000;
+  static constexpr unsigned long DISPLAY_GRACE_INTERACTIVE_MS = 20000;
 
   const Card card;
   const bool autoRefresh;
@@ -45,20 +42,13 @@ class RemoteImageDashboardActivity final : public Activity {
   bool powerInterruptAttached = false;
   unsigned long cycleStartMs = 0;
   unsigned long wifiConnectStart = 0;
-  unsigned long nextInteractiveRefreshAt = 0;
+  unsigned long sleepAt = 0;
   const char* errorMessage = nullptr;
-  TaskHandle_t interactiveFetchTaskHandle = nullptr;
-  std::atomic<bool> interactiveFetchFinished{false};
-  std::atomic<bool> interactiveFetchCancelRequested{false};
-  HttpDownloader::DownloadError interactiveFetchResult = HttpDownloader::HTTP_ERROR;
 
   void promptUrl();
   void beginUpdate();
   void startDirectWifiConnect();
   void runFetch();
-  void startInteractiveFetch();
-  static void interactiveFetchTask(void* context);
-  void completeFetch(HttpDownloader::DownloadError downloadResult);
   HttpDownloader::DownloadError downloadDashboardImage();
   bool reconnectWifiForRetry(unsigned long timeoutMs);
   void startPowerLatch();
@@ -66,7 +56,6 @@ class RemoteImageDashboardActivity final : public Activity {
   bool powerLatchTriggered();
   void returnToUser();
   void goToSleepAndPoll();
-  void scheduleNextInteractiveRefresh();
   void exitDashboardMode();
 
   std::string dashboardUrl() const;

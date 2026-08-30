@@ -197,7 +197,15 @@ void RemoteImageDashboardActivity::startDirectWifiConnect() {
   }
 
   LOG_INF("REMOTE", "Connecting to %s", cred->ssid.c_str());
+  // Mirror WifiSelectionActivity::attemptConnection(). Credentials belong to
+  // WifiCredentialStore, so the SDK's own NVS copy must not drive an
+  // auto-connect: entering STA mode with it enabled starts a connect attempt of
+  // its own, and a begin() issued while that is in flight is dropped. Clearing
+  // it first is what makes a connect without the picker reliable.
+  WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
+  WiFi.disconnect(true, true);
+  delay(100);
   // The radio is powered down again as soon as the fetch ends (deep sleep when
   // unattended, shutdownWifi() when interactive), so modem sleep saves little
   // here and can add multi-second latency to short TLS transfers on marginal

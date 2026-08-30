@@ -80,7 +80,8 @@ class ActivityManager {
   // Will replace currentActivity and drop all activities on stack
   void replaceActivity(std::unique_ptr<Activity>&& newActivity);
 
-  // goTo... functions are convenient wrapper for replaceActivity()
+  // Most goTo... functions replace the current activity. Dashboard previews
+  // are pushed so Back returns to the Lock Screens menu.
   void goToFileTransfer();
   void goToSettings();
   void goToFileBrowser(std::string path = {});

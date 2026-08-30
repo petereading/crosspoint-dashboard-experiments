@@ -199,47 +199,47 @@ void ActivityManager::goToBrowser() {
 }
 
 void ActivityManager::goToClockDashboard() {
-  replaceActivity(
+  pushActivity(
       std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, RemoteImageDashboardActivity::Card::Clock));
 }
 
 void ActivityManager::goToWeatherDashboard() {
-  replaceActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput,
-                                                                 RemoteImageDashboardActivity::Card::Weather));
+  pushActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput,
+                                                              RemoteImageDashboardActivity::Card::Weather));
 }
 
 void ActivityManager::goToCustomImageDashboard() {
-  replaceActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput,
-                                                                 RemoteImageDashboardActivity::Card::CustomImage));
+  pushActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput,
+                                                              RemoteImageDashboardActivity::Card::CustomImage));
 }
 
 void ActivityManager::goToMoonDashboard() {
-  replaceActivity(
+  pushActivity(
       std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, RemoteImageDashboardActivity::Card::Moon));
 }
 
 void ActivityManager::goToRssDashboard() {
-  replaceActivity(
+  pushActivity(
       std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, RemoteImageDashboardActivity::Card::Rss));
 }
 
 void ActivityManager::goToTodayDashboard() {
-  replaceActivity(
+  pushActivity(
       std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, RemoteImageDashboardActivity::Card::Today));
 }
 
 void ActivityManager::goToQuoteDashboard() {
-  replaceActivity(
+  pushActivity(
       std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, RemoteImageDashboardActivity::Card::Quote));
 }
 
 void ActivityManager::goToBitcoinDashboard() {
-  replaceActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput,
-                                                                 RemoteImageDashboardActivity::Card::Bitcoin));
+  pushActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput,
+                                                              RemoteImageDashboardActivity::Card::Bitcoin));
 }
 
 void ActivityManager::goToSolarDashboard() {
-  replaceActivity(
+  pushActivity(
       std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, RemoteImageDashboardActivity::Card::Solar));
 }
 

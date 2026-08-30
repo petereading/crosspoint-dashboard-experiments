@@ -26,11 +26,10 @@ class RemoteImageDashboardActivity final : public Activity {
   enum class State { Connecting, Fetching, Showing, Failed };
 
   static constexpr unsigned long WIFI_TIMEOUT_MS = 45000;
-  static constexpr unsigned long FETCH_TOTAL_TIMEOUT_MS = 25000;
-  static constexpr unsigned long FETCH_FIRST_ATTEMPT_MS = 9000;
-  static constexpr unsigned long FETCH_OPERATION_TIMEOUT_MS = 3000;
-  static constexpr unsigned long WIFI_RETRY_TIMEOUT_MS = 5000;
-  static constexpr unsigned long DISPLAY_GRACE_INTERACTIVE_MS = 20000;
+  static constexpr unsigned long FETCH_TOTAL_TIMEOUT_MS = 40000;
+  static constexpr unsigned long FETCH_FIRST_ATTEMPT_MS = 18000;
+  static constexpr unsigned long FETCH_OPERATION_TIMEOUT_MS = 15000;
+  static constexpr unsigned long WIFI_RETRY_TIMEOUT_MS = 7000;
 
   const Card card;
   const bool autoRefresh;
@@ -42,7 +41,7 @@ class RemoteImageDashboardActivity final : public Activity {
   bool powerInterruptAttached = false;
   unsigned long cycleStartMs = 0;
   unsigned long wifiConnectStart = 0;
-  unsigned long sleepAt = 0;
+  unsigned long nextInteractiveRefreshAt = 0;
   const char* errorMessage = nullptr;
 
   void promptUrl();
@@ -56,6 +55,7 @@ class RemoteImageDashboardActivity final : public Activity {
   bool powerLatchTriggered();
   void returnToUser();
   void goToSleepAndPoll();
+  void scheduleNextInteractiveRefresh();
   void exitDashboardMode();
 
   std::string dashboardUrl() const;

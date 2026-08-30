@@ -64,15 +64,11 @@ void RemoteImageDashboardActivity::onEnter() {
   recoverInterruptedSwap();
   cachedImageAvailable = validateImageFile(imagePath());
 
-  // When Remote Image is entered as the configured sleep screen, paint the
-  // last known-good dashboard immediately instead of replacing the reader page
-  // with a blocking "Downloading image..." screen. Wait for this first paint
-  // before starting HTTPS: otherwise its completion can satisfy the later
-  // requestUpdateAndWait() for the downloaded image and let the device sleep
-  // before that new image reaches the panel. A timer wake already has the
-  // cached dashboard retained on the e-ink panel, so avoid needlessly
-  // repainting the same image before the scheduled refresh begins.
-  if (autoRefresh && cachedImageAvailable && APP_STATE.activeDashboardMode != activeDashboardMode()) {
+  // Paint the last known-good dashboard immediately when opening an interactive
+  // preview, and when entering the configured sleep screen for the first time.
+  // A timer wake already has the cached dashboard retained on the e-ink panel,
+  // so avoid repainting the same image before its scheduled refresh begins.
+  if (cachedImageAvailable && (!autoRefresh || APP_STATE.activeDashboardMode != activeDashboardMode())) {
     requestUpdateAndWait();
   }
 
@@ -103,8 +99,8 @@ void RemoteImageDashboardActivity::onExit() {
   Activity::onExit();
   if (wifiUsed && WiFi.getMode() != WIFI_MODE_NULL) {
     WiFi.disconnect(false);
+    WiFi.mode(WIFI_OFF);
     delay(30);
-    silentRestart();
   }
 }
 
@@ -117,7 +113,7 @@ void RemoteImageDashboardActivity::promptUrl() {
                              if (urlBuffer[0] == '\0') {
                                finish();
                              } else {
-                               if (state == State::Showing) sleepAt = millis() + DISPLAY_GRACE_INTERACTIVE_MS;
+                               if (state == State::Showing) scheduleNextInteractiveRefresh();
                                requestUpdate();
                              }
                              return;
@@ -151,11 +147,11 @@ void RemoteImageDashboardActivity::promptUrl() {
 void RemoteImageDashboardActivity::beginUpdate() {
   state = State::Connecting;
   errorMessage = nullptr;
-  sleepAt = 0;
+  nextInteractiveRefreshAt = 0;
 
   if (WiFi.status() == WL_CONNECTED) {
     state = State::Fetching;
-    if (!autoRefresh) requestUpdate();
+    if (!autoRefresh && !cachedImageAvailable) requestUpdate();
     return;
   }
 
@@ -240,7 +236,7 @@ void RemoteImageDashboardActivity::loop() {
       return;
 
     case State::Fetching:
-      if (!autoRefresh) requestUpdateAndWait();
+      if (!autoRefresh && !cachedImageAvailable) requestUpdateAndWait();
       runFetch();
       return;
 
@@ -265,12 +261,14 @@ void RemoteImageDashboardActivity::loop() {
     return;
   }
   if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
-    sleepAt = 0;
+    nextInteractiveRefreshAt = 0;
     promptUrl();
     return;
   }
-  if (state == State::Showing && sleepAt != 0 && millis() >= sleepAt) {
-    goToSleepAndPoll();
+  if ((state == State::Showing || state == State::Failed) && nextInteractiveRefreshAt != 0 &&
+      static_cast<long>(millis() - nextInteractiveRefreshAt) >= 0) {
+    cycleStartMs = millis();
+    beginUpdate();
   }
 }
 
@@ -313,8 +311,8 @@ void RemoteImageDashboardActivity::runFetch() {
       return;
     }
     goToSleepAndPoll();
-  } else if (state == State::Showing) {
-    sleepAt = millis() + DISPLAY_GRACE_INTERACTIVE_MS;
+  } else {
+    scheduleNextInteractiveRefresh();
   }
 }
 
@@ -425,6 +423,12 @@ void RemoteImageDashboardActivity::goToSleepAndPoll() {
   const uint32_t sleepS = std::max<uint32_t>(1u, (sleepMs + 999u) / 1000u);
   LOG_INF("REMOTE", "Dashboard armed after %lu ms, sleeping for %u s", cycleElapsedMs, static_cast<unsigned>(sleepS));
   enterDashboardSleep(sleepS);
+}
+
+void RemoteImageDashboardActivity::scheduleNextInteractiveRefresh() {
+  if (autoRefresh) return;
+  const uint32_t intervalMs = std::max<uint32_t>(1u, refreshMinutes()) * 60u * 1000u;
+  nextInteractiveRefreshAt = millis() + intervalMs;
 }
 
 void RemoteImageDashboardActivity::exitDashboardMode() {
@@ -747,13 +751,13 @@ void RemoteImageDashboardActivity::render(RenderLock&&) {
   switch (state) {
     case State::Connecting:
     case State::Fetching:
-      // During unattended sleep-screen refreshes, leave the last known-good
-      // dashboard visible while WiFi and HTTPS run. Only first use (no cache)
-      // needs the explicit updating screen.
-      if (autoRefresh && (!cachedImageAvailable || !renderCachedImage())) {
-        renderDefaultSleepScreen();
-      } else if (!autoRefresh) {
-        renderMessage(tr(STR_REMOTE_IMAGE_UPDATING));
+      // Leave the last known-good dashboard visible while WiFi and HTTPS run.
+      // Only first use, when no cache exists, needs an explicit status screen.
+      if (!cachedImageAvailable || !renderCachedImage()) {
+        if (autoRefresh)
+          renderDefaultSleepScreen();
+        else
+          renderMessage(tr(STR_REMOTE_IMAGE_UPDATING));
       }
       break;
     case State::Failed:

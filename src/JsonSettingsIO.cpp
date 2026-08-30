@@ -6,6 +6,7 @@
 #include <ObfuscationUtils.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <string>
 
@@ -117,6 +118,9 @@ bool JsonSettingsIO::loadState(CrossPointState& s, const char* json) {
   s.lastSleepFromReader = doc["lastSleepFromReader"] | false;
   s.showBootScreen = doc["showBootScreen"] | true;
   s.activeDashboardMode = doc["activeDashboardMode"] | static_cast<uint8_t>(0);
+  if (s.activeDashboardMode > CrossPointState::DASHBOARD_REMOTE_SOLAR) {
+    s.activeDashboardMode = CrossPointState::DASHBOARD_NONE;
+  }
   s.tempestTrendRefPressureInHg = doc["tempestTrendRefPressureInHg"] | 0.0f;
   s.tempestTrendRefEpoch = doc["tempestTrendRefEpoch"] | static_cast<uint32_t>(0);
   return true;
@@ -182,6 +186,10 @@ bool JsonSettingsIO::loadSettings(CrossPointSettings& s, const char* json, bool*
   }
 
   auto clamp = [](uint8_t val, uint8_t maxVal, uint8_t def) -> uint8_t { return val < maxVal ? val : def; };
+  const bool needsDashboardMigration = doc["dashboardWorkerUrl"].isNull() && doc["customImageUrl"].isNull();
+  const uint8_t legacyLockScreenType = doc["sleepLockScreenType"] | static_cast<uint8_t>(0);
+  const std::string legacyRemoteImageUrl = doc["remoteImageUrl"] | std::string("");
+  const uint8_t legacyRemoteRefresh = doc["remoteImageRefreshMinutes"] | static_cast<uint8_t>(30);
 
   // Legacy migration: if statusBarChapterPageCount is absent this is a pre-refactor settings file.
   // Populate s with migrated values now so the generic loop below picks them up as defaults and clamps them.
@@ -232,6 +240,41 @@ bool JsonSettingsIO::loadSettings(CrossPointSettings& s, const char* json, bool*
       }
       s.*(info.valuePtr) = v;
     }
+  }
+
+  // Migrate experimental builds that exposed one generic Remote Image URL.
+  // A combined Worker endpoint can be recognized by its route and reduced to
+  // the base URL. Any other URL remains a complete Custom Image URL.
+  if (needsDashboardMigration) {
+    std::string lowerUrl = legacyRemoteImageUrl;
+    std::transform(lowerUrl.begin(), lowerUrl.end(), lowerUrl.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    const size_t clockRoute = lowerUrl.find("/clock.bmp");
+    const size_t weatherRoute = lowerUrl.find("/weather.bmp");
+    const size_t route = clockRoute != std::string::npos ? clockRoute : weatherRoute;
+
+    if (route != std::string::npos) {
+      const std::string workerBase = legacyRemoteImageUrl.substr(0, route);
+      strncpy(s.dashboardWorkerUrl, workerBase.c_str(), sizeof(s.dashboardWorkerUrl) - 1);
+      s.dashboardWorkerUrl[sizeof(s.dashboardWorkerUrl) - 1] = '\0';
+      if (clockRoute != std::string::npos) {
+        s.sleepLockScreenType = CrossPointSettings::SLEEP_LOCK_CLOCK;
+        s.clockRefreshMinutes = std::max<uint8_t>(1, std::min<uint8_t>(60, legacyRemoteRefresh));
+      } else {
+        s.sleepLockScreenType = CrossPointSettings::SLEEP_LOCK_WEATHER;
+        s.weatherRefreshMinutes = std::max<uint8_t>(5, std::min<uint8_t>(240, legacyRemoteRefresh));
+      }
+    } else if (!legacyRemoteImageUrl.empty()) {
+      strncpy(s.customImageUrl, legacyRemoteImageUrl.c_str(), sizeof(s.customImageUrl) - 1);
+      s.customImageUrl[sizeof(s.customImageUrl) - 1] = '\0';
+      s.customImageRefreshMinutes = std::max<uint8_t>(1, std::min<uint8_t>(240, legacyRemoteRefresh));
+      if (legacyLockScreenType == 3) s.sleepLockScreenType = CrossPointSettings::SLEEP_LOCK_CUSTOM_IMAGE;
+    } else if (legacyLockScreenType == 1 || legacyLockScreenType == 2) {
+      s.sleepLockScreenType = CrossPointSettings::SLEEP_LOCK_WEATHER;
+    } else {
+      s.sleepLockScreenType = CrossPointSettings::SLEEP_LOCK_CLOCK;
+    }
+    if (needsResave) *needsResave = true;
   }
 
   if (doc["sleepTimeoutMinutes"].isNull() && !doc["sleepTimeout"].isNull()) {

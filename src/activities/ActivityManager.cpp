@@ -10,7 +10,6 @@
 #include "boot_sleep/BootActivity.h"
 #include "boot_sleep/SleepActivity.h"
 #include "browser/OpdsBookBrowserActivity.h"
-#include "github/GithubDashboardActivity.h"
 #include "home/CrashActivity.h"
 #include "home/FileBrowserActivity.h"
 #include "home/HomeActivity.h"
@@ -18,11 +17,10 @@
 #include "lockscreens/LockScreensActivity.h"
 #include "network/CrossPointWebServerActivity.h"
 #include "reader/ReaderActivity.h"
+#include "remote/RemoteImageDashboardActivity.h"
 #include "settings/OpdsServerListActivity.h"
 #include "settings/SettingsActivity.h"
-#include "tempest/TempestDashboardActivity.h"
 #include "util/FullScreenMessageActivity.h"
-#include "weather/WeatherDashboardActivity.h"
 
 static portMUX_TYPE activityManagerSpinlock = portMUX_INITIALIZER_UNLOCKED;
 
@@ -200,16 +198,49 @@ void ActivityManager::goToBrowser() {
   }
 }
 
-void ActivityManager::goToGithubDashboard() {
-  replaceActivity(std::make_unique<GithubDashboardActivity>(renderer, mappedInput));
+void ActivityManager::goToClockDashboard() {
+  pushActivity(
+      std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, RemoteImageDashboardActivity::Card::Clock));
 }
 
 void ActivityManager::goToWeatherDashboard() {
-  replaceActivity(std::make_unique<WeatherDashboardActivity>(renderer, mappedInput));
+  pushActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput,
+                                                              RemoteImageDashboardActivity::Card::Weather));
 }
 
-void ActivityManager::goToTempestDashboard() {
-  replaceActivity(std::make_unique<TempestDashboardActivity>(renderer, mappedInput));
+void ActivityManager::goToCustomImageDashboard() {
+  pushActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput,
+                                                              RemoteImageDashboardActivity::Card::CustomImage));
+}
+
+void ActivityManager::goToMoonDashboard() {
+  pushActivity(
+      std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, RemoteImageDashboardActivity::Card::Moon));
+}
+
+void ActivityManager::goToRssDashboard() {
+  pushActivity(
+      std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, RemoteImageDashboardActivity::Card::Rss));
+}
+
+void ActivityManager::goToTodayDashboard() {
+  pushActivity(
+      std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, RemoteImageDashboardActivity::Card::Today));
+}
+
+void ActivityManager::goToQuoteDashboard() {
+  pushActivity(
+      std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, RemoteImageDashboardActivity::Card::Quote));
+}
+
+void ActivityManager::goToBitcoinDashboard() {
+  pushActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput,
+                                                              RemoteImageDashboardActivity::Card::Bitcoin));
+}
+
+void ActivityManager::goToSolarDashboard() {
+  pushActivity(
+      std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, RemoteImageDashboardActivity::Card::Solar));
 }
 
 void ActivityManager::goToLockScreens() {
@@ -219,13 +250,40 @@ void ActivityManager::goToLockScreens() {
 void ActivityManager::goToLockScreenDashboard() {
   switch (SETTINGS.sleepLockScreenType) {
     case CrossPointSettings::SLEEP_LOCK_WEATHER:
-      replaceActivity(std::make_unique<WeatherDashboardActivity>(renderer, mappedInput, /*autoRefresh=*/true));
+      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
+          renderer, mappedInput, RemoteImageDashboardActivity::Card::Weather, /*autoRefresh=*/true));
       break;
-    case CrossPointSettings::SLEEP_LOCK_TEMPEST:
-      replaceActivity(std::make_unique<TempestDashboardActivity>(renderer, mappedInput, /*autoRefresh=*/true));
+    case CrossPointSettings::SLEEP_LOCK_CUSTOM_IMAGE:
+      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
+          renderer, mappedInput, RemoteImageDashboardActivity::Card::CustomImage, /*autoRefresh=*/true));
+      break;
+    case CrossPointSettings::SLEEP_LOCK_MOON:
+      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
+          renderer, mappedInput, RemoteImageDashboardActivity::Card::Moon, /*autoRefresh=*/true));
+      break;
+    case CrossPointSettings::SLEEP_LOCK_RSS:
+      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
+          renderer, mappedInput, RemoteImageDashboardActivity::Card::Rss, /*autoRefresh=*/true));
+      break;
+    case CrossPointSettings::SLEEP_LOCK_TODAY:
+      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
+          renderer, mappedInput, RemoteImageDashboardActivity::Card::Today, /*autoRefresh=*/true));
+      break;
+    case CrossPointSettings::SLEEP_LOCK_QUOTE:
+      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
+          renderer, mappedInput, RemoteImageDashboardActivity::Card::Quote, /*autoRefresh=*/true));
+      break;
+    case CrossPointSettings::SLEEP_LOCK_BITCOIN:
+      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
+          renderer, mappedInput, RemoteImageDashboardActivity::Card::Bitcoin, /*autoRefresh=*/true));
+      break;
+    case CrossPointSettings::SLEEP_LOCK_SOLAR:
+      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
+          renderer, mappedInput, RemoteImageDashboardActivity::Card::Solar, /*autoRefresh=*/true));
       break;
     default:
-      replaceActivity(std::make_unique<GithubDashboardActivity>(renderer, mappedInput, /*autoRefresh=*/true));
+      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
+          renderer, mappedInput, RemoteImageDashboardActivity::Card::Clock, /*autoRefresh=*/true));
       break;
   }
 }
@@ -255,7 +313,8 @@ void ActivityManager::goHome(HomeMenuItem initialMenuItem) {
     } else if (activityName == "OpdsBookBrowser") {
       initialMenuItem = HomeMenuItem::OPDS_BROWSER;
     } else if (activityName == "GithubDashboard" || activityName == "WeatherDashboard" ||
-               activityName == "TempestDashboard" || activityName == "LockScreens") {
+               activityName == "TempestDashboard" || activityName == "RemoteImageDashboard" ||
+               activityName == "LockScreens") {
       initialMenuItem = HomeMenuItem::LOCK_SCREENS;
     } else if (activityName == "CrossPointWebServer") {
       initialMenuItem = HomeMenuItem::FILE_TRANSFER;

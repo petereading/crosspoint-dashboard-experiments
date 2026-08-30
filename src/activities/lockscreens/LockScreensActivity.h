@@ -3,18 +3,22 @@
 #include "activities/Activity.h"
 #include "util/ButtonNavigator.h"
 
-// "Lock Screens" folder: a simple menu of the always-on timed-poll dashboards
-// (GitHub / Weather / Tempest, with room for more later) so Home's top level
-// doesn't grow one entry per dashboard as new ones get added.
+// "Lock Screens" folder: Worker dashboard cards and an arbitrary custom BMP.
 class LockScreensActivity final : public Activity {
   ButtonNavigator buttonNavigator;
   int selectorIndex = 0;
 
-  static constexpr int ITEM_COUNT = 3;
+  static constexpr int ITEM_COUNT = 9;
 
-  void onGithubOpen();
+  void onClockOpen();
   void onWeatherOpen();
-  void onTempestOpen();
+  void onCustomImageOpen();
+  void onMoonOpen();
+  void onRssOpen();
+  void onTodayOpen();
+  void onQuoteOpen();
+  void onBitcoinOpen();
+  void onSolarOpen();
 
  public:
   explicit LockScreensActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)

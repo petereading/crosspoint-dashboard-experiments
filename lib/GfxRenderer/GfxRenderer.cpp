@@ -1515,6 +1515,19 @@ static bool logicalRectToPhysicalBounds(GfxRenderer::Orientation orientation, in
   return true;
 }
 
+void GfxRenderer::displayWindow(int x, int y, int width, int height) const {
+  int x0, y0, x1, y1;
+  if (!logicalRectToPhysicalBounds(orientation, x, y, width, height, panelWidth, panelHeight, &x0, &y0, &x1, &y1)) {
+    return;
+  }
+
+  // UC8253 partial-window X bounds must cover complete framebuffer bytes.
+  x0 &= ~7;
+  x1 = std::min(static_cast<int>(panelWidth) - 1, x1 | 7);
+  display.displayWindow(static_cast<uint16_t>(x0), static_cast<uint16_t>(y0), static_cast<uint16_t>(x1 - x0 + 1),
+                        static_cast<uint16_t>(y1 - y0 + 1), fadingFix);
+}
+
 size_t GfxRenderer::getRegionByteSize(int lx, int ly, int lw, int lh) const {
   int x0, y0, x1, y1;
   if (!logicalRectToPhysicalBounds(orientation, lx, ly, lw, lh, panelWidth, panelHeight, &x0, &y0, &x1, &y1)) {

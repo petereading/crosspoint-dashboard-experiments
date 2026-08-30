@@ -130,7 +130,8 @@ enum UIIcon {
   Github,
   Weather,
   Tempest,
-  LockScreens
+  LockScreens,
+  Clock
 };
 
 enum class KeyboardKeyType { Normal, Shift, Mode, Space, Del, Ok, Disabled };

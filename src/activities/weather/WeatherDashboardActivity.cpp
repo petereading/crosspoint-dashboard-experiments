@@ -271,8 +271,8 @@ bool WeatherDashboardActivity::fetchWeather() {
     JsonArrayConst rainProb = daily["precipitation_probability_max"];
     if (rainProb.size() > 0) rainChancePct = rainProb[0] | 0;
 
-    const int n = std::min({(int)times.size(), (int)codes.size(), (int)highs.size(), (int)lows.size(),
-                            MAX_FORECAST_DAYS});
+    const int n =
+        std::min({(int)times.size(), (int)codes.size(), (int)highs.size(), (int)lows.size(), MAX_FORECAST_DAYS});
     for (int i = 0; i < n; i++) {
       const char* iso = times[i] | "";
       if (iso[0] == '\0') continue;
@@ -300,8 +300,8 @@ void WeatherDashboardActivity::runFetch() {
     errorMessage = tr(STR_WEATHER_FETCH_FAILED);
   } else {
     DashboardUI::formatUpdatedStamp(lastUpdated, sizeof(lastUpdated));
-    LOG_INF("WX", "%dF (feels %dF), humidity %d%%, wind %dmph, %d-day forecast", currentTempF, feelsLikeF,
-            humidityPct, windMph, forecastCount);
+    LOG_INF("WX", "%dF (feels %dF), humidity %d%%, wind %dmph, %d-day forecast", currentTempF, feelsLikeF, humidityPct,
+            windMph, forecastCount);
     state = State::Showing;
   }
 
@@ -364,7 +364,7 @@ void WeatherDashboardActivity::renderDashboard() const {
   const bool portrait = SETTINGS.lockScreenOrientation == CrossPointSettings::LOCK_ORIENT_PORTRAIT;
   const auto origOrientation = renderer.getOrientation();
   renderer.setOrientation(portrait ? GfxRenderer::Orientation::Portrait
-                                    : GfxRenderer::Orientation::LandscapeCounterClockwise);
+                                   : GfxRenderer::Orientation::LandscapeCounterClockwise);
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
   const int sideMargin = portrait ? 30 : 40;
@@ -453,8 +453,7 @@ void WeatherDashboardActivity::renderDashboard() const {
 
   // --- Footer bar ---
   DashboardUI::drawFooter(renderer, metrics, pageWidth, pageHeight, sideMargin, drawWeatherBrandIcon,
-                          tr(STR_WEATHER_DASHBOARD), tr(STR_DASHBOARD_UPDATED), lastUpdated,
-                          SETTINGS.weatherPlaceName);
+                          tr(STR_WEATHER_DASHBOARD), tr(STR_DASHBOARD_UPDATED), lastUpdated, SETTINGS.weatherPlaceName);
 
   renderer.displayBuffer(HalDisplay::FULL_REFRESH);
   renderer.setOrientation(origOrientation);

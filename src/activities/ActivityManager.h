@@ -89,6 +89,12 @@ class ActivityManager {
   void goToClockDashboard();
   void goToWeatherDashboard();
   void goToCustomImageDashboard();
+  void goToMoonDashboard();
+  void goToRssDashboard();
+  void goToTodayDashboard();
+  void goToQuoteDashboard();
+  void goToBitcoinDashboard();
+  void goToSolarDashboard();
   void goToLockScreens();
   // Launch the SETTINGS.sleepLockScreenType dashboard in unattended
   // (autoRefresh) mode, for the LOCK_SCREEN sleep-screen behavior.

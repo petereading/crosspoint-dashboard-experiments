@@ -69,6 +69,7 @@ const FONT = {
   "-": [0, 0, 0, 31, 0, 0, 0],
   "/": [1, 2, 2, 4, 8, 8, 16],
   ".": [0, 0, 0, 0, 0, 12, 12],
+  ",": [0, 0, 0, 0, 0, 4, 8],
   "%": [17, 2, 4, 8, 17, 0, 0],
   "'": [4, 4, 8, 0, 0, 0, 0],
   "&": [12, 18, 20, 8, 21, 18, 13],
@@ -145,7 +146,7 @@ function cleanText(text) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toUpperCase()
-    .replace(/[^A-Z0-9 :\-/.%'&]/g, " ")
+    .replace(/[^A-Z0-9 :\-/.%,'&]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -212,6 +213,14 @@ function wrapText(text, scale, maxWidth, maxLines) {
 function drawWrappedText(canvas, text, x, y, scale, maxWidth, maxLines, lineHeight = 9 * scale) {
   const lines = wrapText(text, scale, maxWidth, maxLines);
   lines.forEach((line, index) => drawText(canvas, line, x, y + index * lineHeight, scale));
+  return lines.length;
+}
+
+function drawWrappedTextCentered(canvas, text, x, y, scale, width, maxLines, lineHeight = 9 * scale) {
+  const lines = wrapText(text, scale, width, maxLines);
+  lines.forEach((line, index) => {
+    drawText(canvas, line, x + Math.floor((width - textWidth(line, scale)) / 2), y + index * lineHeight, scale);
+  });
   return lines.length;
 }
 
@@ -1025,6 +1034,265 @@ async function fetchWikipediaToday(language, now, timeZone) {
   return events;
 }
 
+function stripWikiMarkup(value) {
+  let text = String(value || "")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<ref\b[\s\S]*?<\/ref>|<ref\b[^>]*\/>/gi, " ")
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/\[\[(?:[^\]|]+\|)?([^\]]+)\]\]/g, "$1")
+    .replace(/\[https?:\/\/[^\s\]]+\s+([^\]]+)\]/g, "$1")
+    .replace(/'{2,}/g, "");
+  for (let pass = 0; pass < 3; pass++) text = text.replace(/\{\{[^{}]*\}\}/g, " ");
+  return decodeXmlText(text);
+}
+
+async function fetchWikiquote(now, timeZone) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+  const pageDate = formatter.format(now);
+  const apiUrl = new URL("https://en.wikiquote.org/w/api.php");
+  apiUrl.searchParams.set("action", "parse");
+  apiUrl.searchParams.set("page", `Wikiquote:Quote of the day/${pageDate}`);
+  apiUrl.searchParams.set("prop", "wikitext");
+  apiUrl.searchParams.set("format", "json");
+  apiUrl.searchParams.set("formatversion", "2");
+  const response = await fetch(apiUrl, {
+    headers: {
+      accept: "application/json",
+      "user-agent": "CrossPointDashboard/1.0 (https://github.com/petereading/crosspoint-dashboard-experiments)",
+    },
+  });
+  if (!response.ok) throw new Error("Wikiquote service failed");
+  const data = await response.json();
+  const source = data.parse?.wikitext || "";
+  const quoteMatch = source.match(/\|\s*quote\s*=\s*([\s\S]*?)\n\s*\|\s*author\s*=/i);
+  const authorMatch = source.match(/\|\s*author\s*=\s*([^\n}]*)/i);
+  const quote = stripWikiMarkup(quoteMatch?.[1] || "");
+  const author = stripWikiMarkup(authorMatch?.[1] || "");
+  if (!quote || !author) throw new Error("Quote of the day is unavailable");
+  return { quote, author, date: pageDate.toUpperCase() };
+}
+
+function renderQuoteBmp(data, orientation, device) {
+  setCanvasDimensions(device, orientation);
+  const canvas = new Uint8Array(PIXEL_ROW_BYTES * HEIGHT);
+  if (orientation === "landscape") {
+    const compact = HEIGHT < 500;
+    drawTextCentered(canvas, "QUOTE", compact ? 12 : 16, 6);
+    drawTextCentered(canvas, data.date, compact ? 60 : 67, 2);
+    fillRect(canvas, 20, compact ? 87 : 95, WIDTH - 40, 3);
+    const scale = cleanText(data.quote).length > 190 ? 2 : 3;
+    const lineHeight = scale === 3 ? 31 : 23;
+    drawWrappedTextCentered(canvas, data.quote, 42, compact ? 122 : 132, scale, WIDTH - 84, compact ? 7 : 8, lineHeight);
+    drawTextCentered(canvas, data.author, compact ? 375 : 414, 4, WIDTH - 60);
+    drawTextCentered(canvas, "WIKIQUOTE  CC BY-SA", HEIGHT - 18, 1);
+    return makeBmp(canvas);
+  }
+
+  drawTextCentered(canvas, "QUOTE", 25, 7);
+  drawTextCentered(canvas, data.date, 88, 2);
+  fillRect(canvas, 24, 120, WIDTH - 48, 3);
+  const scale = cleanText(data.quote).length > 150 ? 3 : 4;
+  const lineHeight = scale === 4 ? 40 : 31;
+  drawWrappedTextCentered(canvas, data.quote, 30, 184, scale, WIDTH - 60, 10, lineHeight);
+  fillRect(canvas, 80, 620, WIDTH - 160, 2);
+  drawTextCentered(canvas, data.author, 653, 4, WIDTH - 40);
+  drawTextCentered(canvas, "WIKIQUOTE  CC BY-SA", HEIGHT - 19, 1);
+  return makeBmp(canvas);
+}
+
+async function fetchBitcoin(currency) {
+  const product = `BTC-${currency}`;
+  const headers = { accept: "application/json", "user-agent": "CrossPointDashboard/1.0" };
+  const [tickerResponse, candlesResponse] = await Promise.all([
+    fetch(`https://api.exchange.coinbase.com/products/${product}/ticker`, { headers }),
+    fetch(`https://api.exchange.coinbase.com/products/${product}/candles?granularity=86400`, { headers }),
+  ]);
+  if (!tickerResponse.ok || !candlesResponse.ok) throw new Error("Bitcoin price service failed");
+  const ticker = await tickerResponse.json();
+  const rawCandles = await candlesResponse.json();
+  const price = Number(ticker.price);
+  const candles = (Array.isArray(rawCandles) ? rawCandles : [])
+    .filter((row) => Array.isArray(row) && row.length >= 5 && Number.isFinite(Number(row[4])))
+    .sort((a, b) => Number(a[0]) - Number(b[0]))
+    .slice(-8);
+  if (!Number.isFinite(price) || candles.length < 2) throw new Error("Incomplete Bitcoin price response");
+  const previousClose = Number(candles[candles.length - 2][4]);
+  const change = ((price - previousClose) / previousClose) * 100;
+  const prices = candles.slice(-7).map((row) => Number(row[4]));
+  prices[prices.length - 1] = price;
+  return {
+    currency,
+    price,
+    change,
+    prices,
+    high: Math.max(...prices),
+    low: Math.min(...prices),
+    updated: new Date(ticker.time || Date.now()),
+  };
+}
+
+function formatWholePrice(value) {
+  return Math.round(value).toLocaleString("en-US", { maximumFractionDigits: 0 });
+}
+
+function drawPriceChart(canvas, prices, x, y, width, height) {
+  drawRect(canvas, x, y, width, height, 2);
+  const minimum = Math.min(...prices);
+  const maximum = Math.max(...prices);
+  const range = Math.max(1, maximum - minimum);
+  const left = x + 12;
+  const right = x + width - 12;
+  const top = y + 12;
+  const bottom = y + height - 12;
+  for (let index = 1; index < prices.length; index++) {
+    const x0 = left + ((index - 1) * (right - left)) / (prices.length - 1);
+    const x1 = left + (index * (right - left)) / (prices.length - 1);
+    const y0 = bottom - ((prices[index - 1] - minimum) / range) * (bottom - top);
+    const y1 = bottom - ((prices[index] - minimum) / range) * (bottom - top);
+    drawLine(canvas, x0, y0, x1, y1, 3);
+    fillCircle(canvas, Math.round(x1), Math.round(y1), 4);
+  }
+  fillCircle(canvas, left, bottom - ((prices[0] - minimum) / range) * (bottom - top), 4);
+}
+
+function renderBitcoinBmp(data, timeZone, orientation, device) {
+  setCanvasDimensions(device, orientation);
+  const canvas = new Uint8Array(PIXEL_ROW_BYTES * HEIGHT);
+  const local = datePartsInZone(data.updated, timeZone);
+  const direction = data.change >= 0 ? "+" : "";
+  if (orientation === "landscape") {
+    const compact = HEIGHT < 500;
+    drawTextCentered(canvas, "BITCOIN", compact ? 10 : 14, 6);
+    drawTextCentered(canvas, `BTC / ${data.currency}`, compact ? 57 : 64, 2);
+    fillRect(canvas, 20, compact ? 83 : 91, WIDTH - 40, 3);
+    drawTextCenteredInBox(canvas, `${data.currency} ${formatWholePrice(data.price)}`, 20, 300, compact ? 132 : 146, 7);
+    drawTextCenteredInBox(canvas, `${direction}${data.change.toFixed(1)}% 24H`, 20, 300, compact ? 211 : 231, 4);
+    drawTextCenteredInBox(canvas, `HIGH ${formatWholePrice(data.high)}`, 20, 300, compact ? 276 : 303, 2);
+    drawTextCenteredInBox(canvas, `LOW ${formatWholePrice(data.low)}`, 20, 300, compact ? 306 : 335, 2);
+    drawTextCenteredInBox(canvas, "7 DAY PRICE", 326, WIDTH - 346, compact ? 103 : 112, 3);
+    drawPriceChart(canvas, data.prices, 326, compact ? 139 : 151, WIDTH - 346, compact ? 249 : 278);
+    drawTextCentered(canvas, `UPDATED ${local?.time || "--:--"}  DATA COINBASE`, HEIGHT - 18, 1);
+    return makeBmp(canvas);
+  }
+
+  drawTextCentered(canvas, "BITCOIN", 24, 7);
+  drawTextCentered(canvas, `BTC / ${data.currency}`, 88, 3);
+  fillRect(canvas, 24, 124, WIDTH - 48, 3);
+  drawTextCentered(canvas, `${data.currency} ${formatWholePrice(data.price)}`, 166, 8, WIDTH - 30);
+  drawTextCentered(canvas, `${direction}${data.change.toFixed(1)}% 24H`, 247, 4);
+  drawTextCentered(canvas, "7 DAY PRICE", 306, 3);
+  drawPriceChart(canvas, data.prices, 30, 348, WIDTH - 60, 240);
+  drawTextCentered(canvas, `HIGH ${formatWholePrice(data.high)}   LOW ${formatWholePrice(data.low)}`, 620, 2);
+  drawTextCentered(canvas, `UPDATED ${local?.time || "--:--"}  DATA COINBASE`, HEIGHT - 19, 1);
+  return makeBmp(canvas);
+}
+
+const PLANET_ELEMENTS = [
+  ["ME", 0.38709843, 0.00000000, 0.20563661, 0.00002123, 7.00559432, -0.00590158, 252.25166724, 149472.67486623, 77.45771895, 0.15940013, 48.33961819, -0.12214182, 0, 0, 0, 0],
+  ["VE", 0.72332102, -0.00000026, 0.00676399, -0.00005107, 3.39777545, 0.00043494, 181.97970850, 58517.81560260, 131.76755713, 0.05679648, 76.67261496, -0.27274174, 0, 0, 0, 0],
+  ["EA", 1.00000018, -0.00000003, 0.01673163, -0.00003661, -0.00054346, -0.01337178, 100.46691572, 35999.37306329, 102.93005885, 0.31795260, -5.11260389, -0.24123856, 0, 0, 0, 0],
+  ["MA", 1.52371243, 0.00000097, 0.09336511, 0.00009149, 1.85181869, -0.00724757, -4.56813164, 19140.29934243, -23.91744784, 0.45223625, 49.71320984, -0.26852431, 0, 0, 0, 0],
+  ["JU", 5.20248019, -0.00002864, 0.04853590, 0.00018026, 1.29861416, -0.00322699, 34.33479152, 3034.90371757, 14.27495244, 0.18199196, 100.29282654, 0.13024619, -0.00012452, 0.06064060, -0.35635438, 38.35125],
+  ["SA", 9.54149883, -0.00003065, 0.05550825, -0.00032044, 2.49424102, 0.00451969, 50.07571329, 1222.11494724, 92.86136063, 0.54179478, 113.63998702, -0.25015002, 0.00025899, -0.13434469, 0.87320147, 38.35125],
+  ["UR", 19.18797948, -0.00020455, 0.04685740, -0.00001550, 0.77298127, -0.00180155, 314.20276625, 428.49512595, 172.43404441, 0.09266985, 73.96250215, 0.05739699, 0.00058331, -0.97731848, 0.17689245, 7.67025],
+  ["NE", 30.06952752, 0.00006447, 0.00895439, 0.00000818, 1.77005520, 0.00022400, 304.22289287, 218.46515314, 46.68158724, 0.01009938, 131.78635853, -0.00606302, -0.00041348, 0.68346318, -0.10162547, 7.67025],
+];
+
+function planetPositions(now) {
+  const centuries = (2440587.5 + now.getTime() / 86400000 - 2451545.0) / 36525;
+  const radians = Math.PI / 180;
+  return PLANET_ELEMENTS.map((entry) => {
+    const [name, a0, aRate, e0, eRate, i0, iRate, l0, lRate, p0, pRate, node0, nodeRate, b, c, s, f] = entry;
+    const a = a0 + aRate * centuries;
+    const e = e0 + eRate * centuries;
+    const inclination = (i0 + iRate * centuries) * radians;
+    const longitude = l0 + lRate * centuries;
+    const perihelion = p0 + pRate * centuries;
+    const node = (node0 + nodeRate * centuries) * radians;
+    let meanAnomaly = longitude - perihelion + b * centuries * centuries;
+    meanAnomaly += c * Math.cos(f * centuries * radians) + s * Math.sin(f * centuries * radians);
+    meanAnomaly = ((((meanAnomaly + 180) % 360) + 360) % 360 - 180) * radians;
+    let eccentricAnomaly = meanAnomaly;
+    for (let iteration = 0; iteration < 8; iteration++) {
+      eccentricAnomaly -=
+        (eccentricAnomaly - e * Math.sin(eccentricAnomaly) - meanAnomaly) / (1 - e * Math.cos(eccentricAnomaly));
+    }
+    const orbitalX = a * (Math.cos(eccentricAnomaly) - e);
+    const orbitalY = a * Math.sqrt(1 - e * e) * Math.sin(eccentricAnomaly);
+    const omega = perihelion * radians - node;
+    const x =
+      (Math.cos(omega) * Math.cos(node) - Math.sin(omega) * Math.sin(node) * Math.cos(inclination)) * orbitalX +
+      (-Math.sin(omega) * Math.cos(node) - Math.cos(omega) * Math.sin(node) * Math.cos(inclination)) * orbitalY;
+    const y =
+      (Math.cos(omega) * Math.sin(node) + Math.sin(omega) * Math.cos(node) * Math.cos(inclination)) * orbitalX +
+      (-Math.sin(omega) * Math.sin(node) + Math.cos(omega) * Math.cos(node) * Math.cos(inclination)) * orbitalY;
+    return { name, a, x, y, distance: Math.sqrt(x * x + y * y) };
+  });
+}
+
+function drawCircleOutline(canvas, cx, cy, radius) {
+  for (let offset = -radius; offset <= radius; offset++) {
+    const edge = Math.round(Math.sqrt(Math.max(0, radius * radius - offset * offset)));
+    setPixel(canvas, cx + edge, cy + offset);
+    setPixel(canvas, cx - edge, cy + offset);
+    setPixel(canvas, cx + offset, cy + edge);
+    setPixel(canvas, cx + offset, cy - edge);
+  }
+}
+
+function drawSolarChart(canvas, planets, cx, cy, radius) {
+  for (const planet of planets) {
+    drawCircleOutline(canvas, cx, cy, Math.max(8, Math.round(radius * Math.sqrt(planet.a / 30.1))));
+  }
+  fillCircle(canvas, cx, cy, 8);
+  for (const planet of planets) {
+    const angle = Math.atan2(planet.y, planet.x);
+    const distance = radius * Math.sqrt(planet.distance / 30.1);
+    const x = Math.round(cx + Math.cos(angle) * distance);
+    const y = Math.round(cy - Math.sin(angle) * distance);
+    fillCircle(canvas, x, y, planet.name === "EA" ? 6 : 4);
+    const labelX = Math.max(2, Math.min(WIDTH - textWidth(planet.name, 1) - 2, x + 7));
+    drawText(canvas, planet.name, labelX, y - 4, 1);
+  }
+}
+
+function renderSolarBmp(now, timeZone, orientation, device) {
+  setCanvasDimensions(device, orientation);
+  const canvas = new Uint8Array(PIXEL_ROW_BYTES * HEIGHT);
+  const local = datePartsInZone(now, timeZone);
+  const planets = planetPositions(now);
+  if (orientation === "landscape") {
+    const compact = HEIGHT < 500;
+    drawTextCentered(canvas, "SOLAR SYSTEM", compact ? 9 : 13, 6);
+    drawTextCentered(canvas, local?.date || "", compact ? 56 : 63, 2);
+    fillRect(canvas, 20, compact ? 82 : 90, WIDTH - 40, 3);
+    drawSolarChart(canvas, planets, 255, compact ? 266 : 288, compact ? 166 : 188);
+    drawTextCenteredInBox(canvas, "HELIOCENTRIC", 500, WIDTH - 520, compact ? 132 : 146, 4);
+    drawTextCenteredInBox(canvas, "ME MERCURY", 500, WIDTH - 520, compact ? 198 : 218, 2);
+    drawTextCenteredInBox(canvas, "VE VENUS", 500, WIDTH - 520, compact ? 228 : 251, 2);
+    drawTextCenteredInBox(canvas, "EA EARTH", 500, WIDTH - 520, compact ? 258 : 284, 2);
+    drawTextCenteredInBox(canvas, "MA MARS", 500, WIDTH - 520, compact ? 288 : 317, 2);
+    drawTextCenteredInBox(canvas, "JU SA UR NE", 500, WIDTH - 520, compact ? 330 : 359, 2);
+    drawTextCentered(canvas, "POSITIONS JPL APPROXIMATION", HEIGHT - 18, 1);
+    return makeBmp(canvas);
+  }
+
+  drawTextCentered(canvas, "SOLAR SYSTEM", 24, 6);
+  drawTextCentered(canvas, local?.date || "", 82, 2);
+  fillRect(canvas, 24, 115, WIDTH - 48, 3);
+  drawSolarChart(canvas, planets, Math.floor(WIDTH / 2), 350, 210);
+  drawTextCentered(canvas, "HELIOCENTRIC PLANET POSITIONS", 590, 3, WIDTH - 24);
+  drawTextCentered(canvas, "ME MERCURY  VE VENUS  EA EARTH  MA MARS", 640, 1);
+  drawTextCentered(canvas, "JU JUPITER  SA SATURN  UR URANUS  NE NEPTUNE", 664, 1);
+  drawTextCentered(canvas, "POSITIONS JPL APPROXIMATION", HEIGHT - 19, 1);
+  return makeBmp(canvas);
+}
+
 function textResponse(message, status = 200) {
   return new Response(message, {
     status,
@@ -1062,6 +1330,9 @@ export default {
           "Moon phases:\n/moon.bmp\n/moon.bmp?tz=Australia/Sydney&orientation=landscape\n\n" +
           "RSS headlines (URL encode the feed value):\n/rss.bmp?feed=https%3A%2F%2Fexample.com%2Ffeed.xml\n\n" +
           "Wikipedia Today:\n/today.bmp\n/today.bmp?lang=en&orientation=landscape\n\n" +
+          "Quote of the day:\n/quote.bmp\n/quote.bmp?tz=Europe/London\n\n" +
+          "Bitcoin price and seven-day chart:\n/bitcoin.bmp\n/bitcoin.bmp?currency=GBP\n\n" +
+          "Heliocentric solar system:\n/solar.bmp\n/solar.bmp?orientation=landscape\n\n" +
           "Device defaults to X3. Use device=x3 or device=x4.\n" +
           "Orientation defaults to portrait. Use orientation=portrait or orientation=landscape.\n"
       );
@@ -1140,6 +1411,44 @@ export default {
       } catch (error) {
         return textResponse(error instanceof Error ? error.message : "Wikipedia Today generation failed", 502);
       }
+    }
+
+    if (url.pathname === "/quote.bmp") {
+      const timeZone = resolveClockTimeZone(url, request);
+      if (!datePartsInZone(new Date(), timeZone)) {
+        return textResponse("Invalid IANA time zone. Example: Europe/London", 400);
+      }
+      try {
+        const data = await fetchWikiquote(new Date(), timeZone);
+        return bmpResponse(request, renderQuoteBmp(data, orientation, device), "quote.bmp");
+      } catch (error) {
+        return textResponse(error instanceof Error ? error.message : "Quote generation failed", 502);
+      }
+    }
+
+    if (url.pathname === "/bitcoin.bmp") {
+      const currency = (url.searchParams.get("currency") || "GBP").trim().toUpperCase();
+      if (!new Set(["USD", "GBP", "EUR"]).has(currency)) {
+        return textResponse("currency must be USD, GBP, or EUR", 400);
+      }
+      const timeZone = resolveClockTimeZone(url, request);
+      if (!datePartsInZone(new Date(), timeZone)) {
+        return textResponse("Invalid IANA time zone. Example: Europe/London", 400);
+      }
+      try {
+        const data = await fetchBitcoin(currency);
+        return bmpResponse(request, renderBitcoinBmp(data, timeZone, orientation, device), "bitcoin.bmp");
+      } catch (error) {
+        return textResponse(error instanceof Error ? error.message : "Bitcoin generation failed", 502);
+      }
+    }
+
+    if (url.pathname === "/solar.bmp") {
+      const timeZone = resolveClockTimeZone(url, request);
+      if (!datePartsInZone(new Date(), timeZone)) {
+        return textResponse("Invalid IANA time zone. Example: Europe/London", 400);
+      }
+      return bmpResponse(request, renderSolarBmp(new Date(), timeZone, orientation, device), "solar.bmp");
     }
 
     if (url.pathname !== "/weather.bmp") return textResponse("Not found", 404);

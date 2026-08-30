@@ -9,7 +9,7 @@
 // validation, display, and timed sleep; dashboard generation stays off-device.
 class RemoteImageDashboardActivity final : public Activity {
  public:
-  enum class Card { Clock, Weather, CustomImage };
+  enum class Card { Clock, Weather, CustomImage, Moon, Rss, Today, Quote, Bitcoin, Solar };
 
   explicit RemoteImageDashboardActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, Card card,
                                         bool autoRefresh = false)

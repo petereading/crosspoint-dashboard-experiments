@@ -43,6 +43,12 @@ class CrossPointSettings {
     SLEEP_LOCK_CLOCK = 0,
     SLEEP_LOCK_WEATHER = 1,
     SLEEP_LOCK_CUSTOM_IMAGE = 2,
+    SLEEP_LOCK_MOON = 3,
+    SLEEP_LOCK_RSS = 4,
+    SLEEP_LOCK_TODAY = 5,
+    SLEEP_LOCK_QUOTE = 6,
+    SLEEP_LOCK_BITCOIN = 7,
+    SLEEP_LOCK_SOLAR = 8,
     SLEEP_LOCK_SCREEN_COUNT
   };
   enum SLEEP_SCREEN_COVER_MODE { FIT = 0, CROP = 1, SLEEP_SCREEN_COVER_MODE_COUNT };
@@ -91,6 +97,8 @@ class CrossPointSettings {
     LOCK_ORIENT_PORTRAIT = 1,   // 480x800
     LOCK_ORIENT_COUNT
   };
+
+  enum BITCOIN_CURRENCY { BITCOIN_USD = 0, BITCOIN_GBP = 1, BITCOIN_EUR = 2, BITCOIN_CURRENCY_COUNT };
 
   enum ORIENTATION {
     PORTRAIT = 0,       // 480x800 logical coordinates (current default)
@@ -289,17 +297,30 @@ class CrossPointSettings {
   // Public HTTPS URL for the externally generated Remote Image dashboard.
   // Retained only so older settings.json files can migrate to the new fields.
   char remoteImageUrl[256] = "";
-  // Base HTTPS URL for the combined dashboard Worker, without /clock.bmp or
-  // /weather.bmp. The firmware adds the route, hardware, and orientation.
+  // Base HTTPS URL for the combined dashboard Worker, without a card route.
+  // The firmware adds the route, hardware, orientation, and card parameters.
   char dashboardWorkerUrl[256] = "";
   // Complete HTTPS URL for an arbitrary custom BMP.
   char customImageUrl[256] = "";
+  // Public HTTPS RSS/Atom feed and optional heading for the RSS card.
+  char rssFeedUrl[256] = "";
+  char rssFeedTitle[48] = "";
+  // Wikipedia language code used by the Today card.
+  char todayLanguage[8] = "en";
+  // Fiat currency used by the Bitcoin card.
+  uint8_t bitcoinCurrency = BITCOIN_GBP;
   // Poll intervals for the timed dashboards, in minutes
   uint8_t githubRefreshMinutes = 60;
   uint8_t clockRefreshMinutes = 1;
   uint8_t weatherRefreshMinutes = 15;
   uint8_t tempestRefreshMinutes = 10;
   uint8_t customImageRefreshMinutes = 30;
+  uint8_t moonRefreshMinutes = 240;
+  uint8_t rssRefreshMinutes = 30;
+  uint8_t todayRefreshMinutes = 240;
+  uint8_t quoteRefreshMinutes = 240;
+  uint8_t bitcoinRefreshMinutes = 15;
+  uint8_t solarRefreshMinutes = 60;
   // Orientation all lock-screen dashboards render in (shared setting).
   uint8_t lockScreenOrientation = LOCK_ORIENT_LANDSCAPE;
   // Which dashboard the LOCK_SCREEN sleep-screen mode shows.

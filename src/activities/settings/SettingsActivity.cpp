@@ -404,9 +404,17 @@ void SettingsActivity::render(RenderLock&&) {
               valueText = valueBuffer;
             }
           } else if (setting.nameId == StrId::STR_GITHUB_REFRESH_INTERVAL ||
+                     setting.nameId == StrId::STR_CLOCK_REFRESH_INTERVAL ||
                      setting.nameId == StrId::STR_WEATHER_REFRESH_INTERVAL ||
                      setting.nameId == StrId::STR_TEMPEST_REFRESH_INTERVAL ||
-                     setting.nameId == StrId::STR_REMOTE_IMAGE_REFRESH_INTERVAL) {
+                     setting.nameId == StrId::STR_REMOTE_IMAGE_REFRESH_INTERVAL ||
+                     setting.nameId == StrId::STR_CUSTOM_IMAGE_REFRESH_INTERVAL ||
+                     setting.nameId == StrId::STR_MOON_REFRESH_INTERVAL ||
+                     setting.nameId == StrId::STR_RSS_REFRESH_INTERVAL ||
+                     setting.nameId == StrId::STR_TODAY_REFRESH_INTERVAL ||
+                     setting.nameId == StrId::STR_QUOTE_REFRESH_INTERVAL ||
+                     setting.nameId == StrId::STR_BITCOIN_REFRESH_INTERVAL ||
+                     setting.nameId == StrId::STR_SOLAR_REFRESH_INTERVAL) {
             char valueBuffer[32];
             snprintf(valueBuffer, sizeof(valueBuffer), tr(STR_SLEEP_TIMER_VALUE_FORMAT),
                      static_cast<unsigned int>(SETTINGS.*(setting.valuePtr)));

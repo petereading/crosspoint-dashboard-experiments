@@ -57,7 +57,7 @@ void LockScreensActivity::render(RenderLock&&) {
 
   const std::vector<const char*> items = {tr(STR_CLOCK_DASHBOARD), tr(STR_WEATHER_DASHBOARD),
                                           tr(STR_CUSTOM_IMAGE_DASHBOARD)};
-  const std::vector<UIIcon> icons = {LockScreens, Weather, Image};
+  const std::vector<UIIcon> icons = {UIIcon::Clock, UIIcon::Weather, UIIcon::Image};
 
   GUI.drawButtonMenu(
       renderer,

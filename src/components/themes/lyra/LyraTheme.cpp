@@ -15,12 +15,14 @@
 #include "components/icons/book.h"
 #include "components/icons/book24.h"
 #include "components/icons/bookmark.h"
+#include "components/icons/clock.h"
 #include "components/icons/cover.h"
 #include "components/icons/file24.h"
 #include "components/icons/folder.h"
 #include "components/icons/folder24.h"
 #include "components/icons/github.h"
 #include "components/icons/hotspot.h"
+#include "components/icons/image.h"
 #include "components/icons/image24.h"
 #include "components/icons/library.h"
 #include "components/icons/lockscreens.h"
@@ -80,6 +82,10 @@ const uint8_t* iconForName(UIIcon icon, int size) {
         return HotspotIcon;
       case UIIcon::Bookmark:
         return BookmarkIcon;
+      case UIIcon::Clock:
+        return ClockIcon;
+      case UIIcon::Image:
+        return ImageIcon;
       case UIIcon::Github:
         return GithubIcon;
       case UIIcon::Weather:

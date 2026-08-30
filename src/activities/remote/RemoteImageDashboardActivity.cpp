@@ -95,6 +95,7 @@ void RemoteImageDashboardActivity::onEnter() {
 }
 
 void RemoteImageDashboardActivity::onExit() {
+  interactiveFetchCancelRequested.store(true, std::memory_order_relaxed);
   stopPowerLatch();
   Activity::onExit();
   if (wifiUsed && WiFi.getMode() != WIFI_MODE_NULL) {
@@ -150,6 +151,7 @@ void RemoteImageDashboardActivity::beginUpdate() {
   nextInteractiveRefreshAt = 0;
 
   if (WiFi.status() == WL_CONNECTED) {
+    WiFi.setSleep(false);
     state = State::Fetching;
     if (!autoRefresh && !cachedImageAvailable) requestUpdate();
     return;
@@ -167,6 +169,7 @@ void RemoteImageDashboardActivity::beginUpdate() {
                              finish();
                              return;
                            }
+                           WiFi.setSleep(false);
                            state = State::Fetching;
                            requestUpdate();
                          });
@@ -236,8 +239,27 @@ void RemoteImageDashboardActivity::loop() {
       return;
 
     case State::Fetching:
-      if (!autoRefresh && !cachedImageAvailable) requestUpdateAndWait();
-      runFetch();
+      if (autoRefresh) {
+        runFetch();
+        return;
+      }
+      if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+        interactiveFetchCancelRequested.store(true, std::memory_order_relaxed);
+      }
+      if (!interactiveFetchTaskHandle) {
+        if (!cachedImageAvailable) requestUpdateAndWait();
+        startInteractiveFetch();
+        return;
+      }
+      if (!interactiveFetchFinished.load(std::memory_order_acquire)) return;
+
+      interactiveFetchTaskHandle = nullptr;
+      if (interactiveFetchCancelRequested.load(std::memory_order_relaxed)) {
+        if (Storage.exists(tempPath())) Storage.remove(tempPath());
+        finish();
+        return;
+      }
+      completeFetch(interactiveFetchResult);
       return;
 
     case State::Showing:
@@ -282,6 +304,34 @@ void RemoteImageDashboardActivity::runFetch() {
     returnToUser();
     return;
   }
+  completeFetch(downloadResult);
+}
+
+void RemoteImageDashboardActivity::startInteractiveFetch() {
+  Storage.mkdir("/.crosspoint");
+  interactiveFetchCancelRequested.store(false, std::memory_order_relaxed);
+  interactiveFetchFinished.store(false, std::memory_order_relaxed);
+  LOG_INF("REMOTE", "Starting cancellable dashboard image download");
+  if (xTaskCreate(interactiveFetchTask, "dashboard_fetch", 8192, this, 1, &interactiveFetchTaskHandle) != pdPASS) {
+    interactiveFetchTaskHandle = nullptr;
+    completeFetch(HttpDownloader::HTTP_ERROR);
+  }
+}
+
+void RemoteImageDashboardActivity::interactiveFetchTask(void* context) {
+  auto* activity = static_cast<RemoteImageDashboardActivity*>(context);
+  {
+    // The X3 display and SD card share the SPI bus. Keep rendering paused while
+    // the background task streams the temporary file, but leave the main loop
+    // free to observe Back and request cancellation.
+    RenderLock lock(*activity);
+    activity->interactiveFetchResult = activity->downloadDashboardImage();
+  }
+  activity->interactiveFetchFinished.store(true, std::memory_order_release);
+  vTaskDelete(nullptr);
+}
+
+void RemoteImageDashboardActivity::completeFetch(const HttpDownloader::DownloadError downloadResult) {
   if (downloadResult != HttpDownloader::OK) {
     LOG_ERR("REMOTE", "Image download failed: %d", static_cast<int>(downloadResult));
     state = State::Failed;
@@ -318,7 +368,9 @@ void RemoteImageDashboardActivity::runFetch() {
 
 HttpDownloader::DownloadError RemoteImageDashboardActivity::downloadDashboardImage() {
   const unsigned long fetchStartedAt = millis();
-  const auto cancelled = [this]() { return autoRefresh && powerLatchTriggered(); };
+  const auto cancelled = [this]() {
+    return interactiveFetchCancelRequested.load(std::memory_order_relaxed) || (autoRefresh && powerLatchTriggered());
+  };
   const auto remainingBudget = [&]() -> unsigned long {
     const unsigned long elapsed = millis() - fetchStartedAt;
     return elapsed < FETCH_TOTAL_TIMEOUT_MS ? FETCH_TOTAL_TIMEOUT_MS - elapsed : 0;

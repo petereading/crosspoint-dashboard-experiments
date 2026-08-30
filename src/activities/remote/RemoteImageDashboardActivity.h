@@ -1,5 +1,9 @@
 #pragma once
 
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+#include <atomic>
 #include <string>
 
 #include "activities/Activity.h"
@@ -19,17 +23,17 @@ class RemoteImageDashboardActivity final : public Activity {
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
-  bool skipLoopDelay() override { return state == State::Connecting || state == State::Fetching; }
+  bool skipLoopDelay() override { return state == State::Connecting || (autoRefresh && state == State::Fetching); }
   bool preventAutoSleep() override { return autoRefresh || state != State::Failed; }
 
  private:
   enum class State { Connecting, Fetching, Showing, Failed };
 
   static constexpr unsigned long WIFI_TIMEOUT_MS = 45000;
-  static constexpr unsigned long FETCH_TOTAL_TIMEOUT_MS = 40000;
-  static constexpr unsigned long FETCH_FIRST_ATTEMPT_MS = 18000;
-  static constexpr unsigned long FETCH_OPERATION_TIMEOUT_MS = 15000;
-  static constexpr unsigned long WIFI_RETRY_TIMEOUT_MS = 7000;
+  static constexpr unsigned long FETCH_TOTAL_TIMEOUT_MS = 60000;
+  static constexpr unsigned long FETCH_FIRST_ATTEMPT_MS = 30000;
+  static constexpr unsigned long FETCH_OPERATION_TIMEOUT_MS = 20000;
+  static constexpr unsigned long WIFI_RETRY_TIMEOUT_MS = 8000;
 
   const Card card;
   const bool autoRefresh;
@@ -43,11 +47,18 @@ class RemoteImageDashboardActivity final : public Activity {
   unsigned long wifiConnectStart = 0;
   unsigned long nextInteractiveRefreshAt = 0;
   const char* errorMessage = nullptr;
+  TaskHandle_t interactiveFetchTaskHandle = nullptr;
+  std::atomic<bool> interactiveFetchFinished{false};
+  std::atomic<bool> interactiveFetchCancelRequested{false};
+  HttpDownloader::DownloadError interactiveFetchResult = HttpDownloader::HTTP_ERROR;
 
   void promptUrl();
   void beginUpdate();
   void startDirectWifiConnect();
   void runFetch();
+  void startInteractiveFetch();
+  static void interactiveFetchTask(void* context);
+  void completeFetch(HttpDownloader::DownloadError downloadResult);
   HttpDownloader::DownloadError downloadDashboardImage();
   bool reconnectWifiForRetry(unsigned long timeoutMs);
   void startPowerLatch();

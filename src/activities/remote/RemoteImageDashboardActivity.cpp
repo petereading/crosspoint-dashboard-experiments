@@ -76,6 +76,7 @@ void RemoteImageDashboardActivity::onEnter() {
 
   recoverInterruptedSwap();
   cachedImageAvailable = validateImageFile(imagePath());
+  snprintf(statusDetail, sizeof(statusDetail), "starting");
 
   // Paint the last known-good dashboard immediately when opening an interactive
   // preview, and when entering the configured sleep screen for the first time.
@@ -89,6 +90,7 @@ void RemoteImageDashboardActivity::onEnter() {
     if (autoRefresh) {
       state = State::Failed;
       errorMessage = tr(STR_REMOTE_IMAGE_HTTPS_REQUIRED);
+      snprintf(statusDetail, sizeof(statusDetail), "no worker URL set");
       requestUpdate();
       return;
     }
@@ -100,6 +102,7 @@ void RemoteImageDashboardActivity::onEnter() {
       (card == Card::Rss && !RemoteImageValidation::isHttpsUrl(SETTINGS.rssFeedUrl))) {
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_HTTPS_REQUIRED);
+    snprintf(statusDetail, sizeof(statusDetail), "URL must be https");
     requestUpdate();
     return;
   }
@@ -168,11 +171,13 @@ void RemoteImageDashboardActivity::beginUpdate() {
 
   if (WiFi.status() == WL_CONNECTED) {
     state = State::Fetching;
+    snprintf(statusDetail, sizeof(statusDetail), "fetching");
     if (!autoRefresh && !cachedImageAvailable) requestUpdate();
     return;
   }
 
   wifiUsed = true;
+  snprintf(statusDetail, sizeof(statusDetail), "connecting");
   startDirectWifiConnect();
 }
 
@@ -269,13 +274,14 @@ void RemoteImageDashboardActivity::loop() {
     case State::Connecting:
       if (WiFi.status() == WL_CONNECTED) {
         state = State::Fetching;
+        snprintf(statusDetail, sizeof(statusDetail), "fetching");
         return;
       }
       if (millis() - wifiConnectStart >= WIFI_TIMEOUT_MS) {
         LOG_ERR("REMOTE", "WiFi connect timed out");
         state = State::Failed;
         errorMessage = tr(STR_DASHBOARD_WIFI_FAILED);
-        snprintf(failureDetail, sizeof(failureDetail), "WiFi connect timed out");
+        snprintf(statusDetail, sizeof(statusDetail), "WiFi connect timed out");
         requestUpdateAndWait();
         if (!autoRefresh) {
           // Keep the card on screen and retry on its normal interval.
@@ -344,20 +350,20 @@ void RemoteImageDashboardActivity::runFetch() {
     errorMessage = tr(STR_REMOTE_IMAGE_FETCH_FAILED);
     switch (downloadResult) {
       case HttpDownloader::TIMED_OUT:
-        snprintf(failureDetail, sizeof(failureDetail), "fetch timed out");
+        snprintf(statusDetail, sizeof(statusDetail), "fetch timed out");
         break;
       case HttpDownloader::FILE_ERROR:
-        snprintf(failureDetail, sizeof(failureDetail), "SD write failed");
+        snprintf(statusDetail, sizeof(statusDetail), "SD write failed");
         break;
       case HttpDownloader::ABORTED:
-        snprintf(failureDetail, sizeof(failureDetail), "fetch cancelled");
+        snprintf(statusDetail, sizeof(statusDetail), "fetch cancelled");
         break;
       default:
         if (lastHttpStatus > 0) {
-          snprintf(failureDetail, sizeof(failureDetail), "HTTP %d from worker", lastHttpStatus);
+          snprintf(statusDetail, sizeof(statusDetail), "HTTP %d from worker", lastHttpStatus);
         } else {
           // Never got a status line: DNS, TCP, or the TLS handshake.
-          snprintf(failureDetail, sizeof(failureDetail), "no reply from worker");
+          snprintf(statusDetail, sizeof(statusDetail), "no reply from worker");
         }
         break;
     }
@@ -365,16 +371,16 @@ void RemoteImageDashboardActivity::runFetch() {
     Storage.remove(tempPath());
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_INVALID);
-    snprintf(failureDetail, sizeof(failureDetail), "bad image: %s", lastBmpError);
+    snprintf(statusDetail, sizeof(statusDetail), "bad image: %s", lastBmpError);
   } else if (!promoteDownloadedImage()) {
     Storage.remove(tempPath());
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_FETCH_FAILED);
-    snprintf(failureDetail, sizeof(failureDetail), "cache swap failed");
+    snprintf(statusDetail, sizeof(statusDetail), "cache swap failed");
   } else {
     cachedImageAvailable = true;
     state = State::Showing;
-    failureDetail[0] = '\0';
+    snprintf(statusDetail, sizeof(statusDetail), "ok #%u", static_cast<unsigned>(++cycleCount));
   }
 
   if (autoRefresh && powerLatchTriggered()) {
@@ -876,25 +882,29 @@ bool RemoteImageDashboardActivity::renderCachedImage() const {
 
   renderer.clearScreen();
   renderer.drawBitmap(bitmap, x, y, pageWidth, pageHeight);
-  drawFailureFooter(pageWidth, pageHeight);
+  drawStatusFooter(pageWidth, pageHeight);
   renderer.displayBuffer(HalDisplay::FULL_REFRESH);
   renderer.setOrientation(originalOrientation);
   file.close();
   return true;
 }
 
-// A failed refresh leaves the previous card on screen, so without this the card
-// just looks stale. Only on an open card: an unattended lock screen should stay
-// clean, and the reason is in the serial log either way. The text is diagnostic
-// rather than prose, so it is deliberately not run through tr().
-void RemoteImageDashboardActivity::drawFailureFooter(const int pageWidth, const int pageHeight) const {
-  if (autoRefresh || failureDetail[0] == '\0') return;
+// A card keeps its last good image through every outcome, so without this an
+// open card that is connecting, one that cannot reach its worker, and one
+// refreshing normally are indistinguishable. Only on an open card: an
+// unattended lock screen stays clean, and the same text is in the serial log
+// either way. It is diagnostic rather than prose, so deliberately not tr()'d.
+// Repainting only happens at the end of a cycle, so the line shows the last
+// completed outcome -- a status that never advances past "starting" means the
+// refresh never ran, which is the point.
+void RemoteImageDashboardActivity::drawStatusFooter(const int pageWidth, const int pageHeight) const {
+  if (autoRefresh || statusDetail[0] == '\0') return;
 
   constexpr int BAR_HEIGHT = 16;
   const int barTop = pageHeight - BAR_HEIGHT;
   renderer.fillRect(0, barTop, pageWidth, BAR_HEIGHT, false);
   renderer.drawLine(0, barTop, pageWidth, barTop, true);
-  renderer.drawCenteredText(SMALL_FONT_ID, barTop + 3, failureDetail);
+  renderer.drawCenteredText(SMALL_FONT_ID, barTop + 3, statusDetail);
 }
 
 void RemoteImageDashboardActivity::renderDefaultSleepScreen() const {
@@ -913,8 +923,8 @@ void RemoteImageDashboardActivity::renderMessage(const char* message) const {
   renderer.clearScreen();
   renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 30, title(), true, EpdFontFamily::BOLD);
   renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 5, message);
-  if (failureDetail[0] != '\0') {
-    renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 30, failureDetail);
+  if (statusDetail[0] != '\0') {
+    renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 30, statusDetail);
   }
 
   if (!autoRefresh && state == State::Failed) {

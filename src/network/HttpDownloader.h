@@ -26,28 +26,6 @@ class HttpDownloader {
     TIMED_OUT,
   };
 
-  enum class DiagnosticStage : uint8_t {
-    None,
-    Cancelled,
-    TimedOut,
-    ClientInit,
-    Open,
-    Headers,
-    HttpStatus,
-    Read,
-    Incomplete,
-    FileOpen,
-    FileWrite,
-    Empty,
-  };
-
-  struct DownloadDiagnostics {
-    DiagnosticStage stage = DiagnosticStage::None;
-    int errorCode = 0;
-    int httpStatus = 0;
-    size_t bytesReceived = 0;
-  };
-
   struct DownloadOptions {
     uint32_t operationTimeoutMs = 60000;
     uint32_t overallTimeoutMs = 0;
@@ -85,6 +63,4 @@ class HttpDownloader {
   static DownloadError downloadToFile(const std::string& url, const std::string& destPath,
                                       const DownloadOptions& options, ProgressCallback progress = nullptr,
                                       const std::string& username = "", const std::string& password = "");
-
-  static DownloadDiagnostics getLastDownloadDiagnostics();
 };

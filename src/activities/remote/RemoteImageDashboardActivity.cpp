@@ -36,10 +36,53 @@ namespace {
 volatile uint32_t remotePowerInterruptFired = 0;
 
 void IRAM_ATTR remotePowerInterruptHandler() { remotePowerInterruptFired = 1; }
+
+std::string urlEncode(const char* value) {
+  static constexpr char kHexDigits[] = "0123456789ABCDEF";
+  std::string encoded;
+  for (const unsigned char ch : std::string(value ? value : "")) {
+    if (std::isalnum(ch) || ch == '-' || ch == '_' || ch == '.' || ch == '~') {
+      encoded.push_back(static_cast<char>(ch));
+    } else {
+      encoded.push_back('%');
+      encoded.push_back(kHexDigits[ch >> 4]);
+      encoded.push_back(kHexDigits[ch & 0x0f]);
+    }
+  }
+  return encoded;
+}
+
+std::string workerBaseUrl(const char* value) {
+  std::string base = value ? value : "";
+  const size_t first = base.find_first_not_of(" \t\r\n");
+  if (first == std::string::npos) return {};
+  const size_t last = base.find_last_not_of(" \t\r\n");
+  base = base.substr(first, last - first + 1);
+
+  // Built-in cards all live at the Worker origin. Discard any pasted card
+  // route, query, or fragment so changing one card cannot break every other
+  // card (for example, /today.bmp must not become /today.bmp/clock.bmp).
+  const size_t scheme = base.find("://");
+  if (scheme != std::string::npos) {
+    const size_t path = base.find_first_of("/?#", scheme + 3);
+    if (path != std::string::npos) base.resize(path);
+  }
+  while (!base.empty() && base.back() == '/') base.pop_back();
+  return base;
+}
 }  // namespace
 
 void RemoteImageDashboardActivity::onEnter() {
   Activity::onEnter();
+
+  if (card != Card::CustomImage && SETTINGS.dashboardWorkerUrl[0] != '\0') {
+    const std::string normalized = workerBaseUrl(SETTINGS.dashboardWorkerUrl);
+    if (normalized != SETTINGS.dashboardWorkerUrl) {
+      strncpy(SETTINGS.dashboardWorkerUrl, normalized.c_str(), sizeof(SETTINGS.dashboardWorkerUrl) - 1);
+      SETTINGS.dashboardWorkerUrl[sizeof(SETTINGS.dashboardWorkerUrl) - 1] = '\0';
+      SETTINGS.saveToFile();
+    }
+  }
 
   cycleStartMs = millis();
   powerInputArmed = false;
@@ -49,15 +92,11 @@ void RemoteImageDashboardActivity::onEnter() {
   recoverInterruptedSwap();
   cachedImageAvailable = validateImageFile(imagePath());
 
-  // When Remote Image is entered as the configured sleep screen, paint the
-  // last known-good dashboard immediately instead of replacing the reader page
-  // with a blocking "Downloading image..." screen. Wait for this first paint
-  // before starting HTTPS: otherwise its completion can satisfy the later
-  // requestUpdateAndWait() for the downloaded image and let the device sleep
-  // before that new image reaches the panel. A timer wake already has the
-  // cached dashboard retained on the e-ink panel, so avoid needlessly
-  // repainting the same image before the scheduled refresh begins.
-  if (autoRefresh && cachedImageAvailable && APP_STATE.activeDashboardMode != activeDashboardMode()) {
+  // Paint the last known-good dashboard immediately when opening an interactive
+  // preview, and when entering the configured sleep screen for the first time.
+  // A timer wake already has the cached dashboard retained on the e-ink panel,
+  // so avoid repainting the same image before its scheduled refresh begins.
+  if (cachedImageAvailable && (!autoRefresh || APP_STATE.activeDashboardMode != activeDashboardMode())) {
     requestUpdateAndWait();
   }
 
@@ -65,7 +104,6 @@ void RemoteImageDashboardActivity::onEnter() {
     if (autoRefresh) {
       state = State::Failed;
       errorMessage = tr(STR_REMOTE_IMAGE_HTTPS_REQUIRED);
-      failureStage = "URL MISSING";
       requestUpdate();
       return;
     }
@@ -73,10 +111,10 @@ void RemoteImageDashboardActivity::onEnter() {
     return;
   }
 
-  if (!RemoteImageValidation::isHttpsUrl(dashboardUrl())) {
+  if (!RemoteImageValidation::isHttpsUrl(dashboardUrl()) ||
+      (card == Card::Rss && !RemoteImageValidation::isHttpsUrl(SETTINGS.rssFeedUrl))) {
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_HTTPS_REQUIRED);
-    failureStage = "URL INVALID";
     requestUpdate();
     return;
   }
@@ -89,8 +127,8 @@ void RemoteImageDashboardActivity::onExit() {
   Activity::onExit();
   if (wifiUsed && WiFi.getMode() != WIFI_MODE_NULL) {
     WiFi.disconnect(false);
+    WiFi.mode(WIFI_OFF);
     delay(30);
-    silentRestart();
   }
 }
 
@@ -103,7 +141,7 @@ void RemoteImageDashboardActivity::promptUrl() {
                              if (urlBuffer[0] == '\0') {
                                finish();
                              } else {
-                               if (state == State::Showing) sleepAt = millis() + DISPLAY_GRACE_INTERACTIVE_MS;
+                               if (state == State::Showing) scheduleNextInteractiveRefresh();
                                requestUpdate();
                              }
                              return;
@@ -116,16 +154,22 @@ void RemoteImageDashboardActivity::promptUrl() {
                              finish();
                              return;
                            }
-                           if (!RemoteImageValidation::isHttpsUrl(kb.text)) {
+                           const bool isWorkerUrl = urlBuffer == SETTINGS.dashboardWorkerUrl;
+                           const std::string savedUrl = isWorkerUrl ? workerBaseUrl(kb.text.c_str()) : kb.text;
+                           if (!RemoteImageValidation::isHttpsUrl(savedUrl)) {
                              state = State::Failed;
                              errorMessage = tr(STR_REMOTE_IMAGE_HTTPS_REQUIRED);
                              requestUpdate();
                              return;
                            }
 
-                           strncpy(urlBuffer, kb.text.c_str(), configuredUrlCapacity() - 1);
+                           strncpy(urlBuffer, savedUrl.c_str(), configuredUrlCapacity() - 1);
                            urlBuffer[configuredUrlCapacity() - 1] = '\0';
                            SETTINGS.saveToFile();
+                           if (configuredUrl()[0] == '\0') {
+                             promptUrl();
+                             return;
+                           }
                            beginUpdate();
                          });
 }
@@ -133,13 +177,11 @@ void RemoteImageDashboardActivity::promptUrl() {
 void RemoteImageDashboardActivity::beginUpdate() {
   state = State::Connecting;
   errorMessage = nullptr;
-  failureStage = nullptr;
-  downloadDiagnostics = {};
-  sleepAt = 0;
+  nextInteractiveRefreshAt = 0;
 
   if (WiFi.status() == WL_CONNECTED) {
     state = State::Fetching;
-    if (!autoRefresh) requestUpdate();
+    if (!autoRefresh && !cachedImageAvailable) requestUpdate();
     return;
   }
 
@@ -172,7 +214,6 @@ void RemoteImageDashboardActivity::startDirectWifiConnect() {
     LOG_ERR("REMOTE", "No saved WiFi network for unattended refresh");
     state = State::Failed;
     errorMessage = tr(STR_DASHBOARD_WIFI_FAILED);
-    failureStage = "WIFI CREDENTIALS";
     return;
   }
 
@@ -215,7 +256,6 @@ void RemoteImageDashboardActivity::loop() {
         LOG_ERR("REMOTE", "Unattended WiFi connect timed out");
         state = State::Failed;
         errorMessage = tr(STR_DASHBOARD_WIFI_FAILED);
-        failureStage = "WIFI TIMEOUT";
         requestUpdateAndWait();
         if (powerLatchTriggered()) {
           returnToUser();
@@ -226,7 +266,7 @@ void RemoteImageDashboardActivity::loop() {
       return;
 
     case State::Fetching:
-      if (!autoRefresh) requestUpdateAndWait();
+      if (!autoRefresh && !cachedImageAvailable) requestUpdateAndWait();
       runFetch();
       return;
 
@@ -251,12 +291,14 @@ void RemoteImageDashboardActivity::loop() {
     return;
   }
   if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
-    sleepAt = 0;
+    nextInteractiveRefreshAt = 0;
     promptUrl();
     return;
   }
-  if (state == State::Showing && sleepAt != 0 && millis() >= sleepAt) {
-    goToSleepAndPoll();
+  if ((state == State::Showing || state == State::Failed) && nextInteractiveRefreshAt != 0 &&
+      static_cast<long>(millis() - nextInteractiveRefreshAt) >= 0) {
+    cycleStartMs = millis();
+    beginUpdate();
   }
 }
 
@@ -265,7 +307,6 @@ void RemoteImageDashboardActivity::runFetch() {
 
   LOG_INF("REMOTE", "Downloading configured dashboard image");
   const auto downloadResult = downloadDashboardImage();
-  downloadDiagnostics = HttpDownloader::getLastDownloadDiagnostics();
   if (downloadResult == HttpDownloader::ABORTED && autoRefresh && powerLatchTriggered()) {
     LOG_INF("REMOTE", "Dashboard download cancelled by power button");
     returnToUser();
@@ -275,17 +316,14 @@ void RemoteImageDashboardActivity::runFetch() {
     LOG_ERR("REMOTE", "Image download failed: %d", static_cast<int>(downloadResult));
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_FETCH_FAILED);
-    failureStage = "DOWNLOAD";
   } else if (!validateImageFile(tempPath())) {
     Storage.remove(tempPath());
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_INVALID);
-    failureStage = "BMP VALIDATION";
   } else if (!promoteDownloadedImage()) {
     Storage.remove(tempPath());
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_FETCH_FAILED);
-    failureStage = "CACHE REPLACE";
   } else {
     cachedImageAvailable = true;
     state = State::Showing;
@@ -303,8 +341,8 @@ void RemoteImageDashboardActivity::runFetch() {
       return;
     }
     goToSleepAndPoll();
-  } else if (state == State::Showing) {
-    sleepAt = millis() + DISPLAY_GRACE_INTERACTIVE_MS;
+  } else {
+    scheduleNextInteractiveRefresh();
   }
 }
 
@@ -417,6 +455,12 @@ void RemoteImageDashboardActivity::goToSleepAndPoll() {
   enterDashboardSleep(sleepS);
 }
 
+void RemoteImageDashboardActivity::scheduleNextInteractiveRefresh() {
+  if (autoRefresh) return;
+  const uint32_t intervalMs = std::max<uint32_t>(1u, refreshMinutes()) * 60u * 1000u;
+  nextInteractiveRefreshAt = millis() + intervalMs;
+}
+
 void RemoteImageDashboardActivity::exitDashboardMode() {
   if (APP_STATE.activeDashboardMode == activeDashboardMode()) {
     APP_STATE.activeDashboardMode = CrossPointState::DASHBOARD_NONE;
@@ -427,36 +471,72 @@ void RemoteImageDashboardActivity::exitDashboardMode() {
 std::string RemoteImageDashboardActivity::dashboardUrl() const {
   if (card == Card::CustomImage) return SETTINGS.customImageUrl;
 
-  std::string base = SETTINGS.dashboardWorkerUrl;
-  while (!base.empty() && base.back() == '/') base.pop_back();
-
-  // Be forgiving when an endpoint URL was pasted instead of the Worker base.
-  std::string lower = base;
-  std::transform(lower.begin(), lower.end(), lower.begin(),
-                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-  const size_t clockRoute = lower.find("/clock.bmp");
-  const size_t weatherRoute = lower.find("/weather.bmp");
-  const size_t route = clockRoute != std::string::npos ? clockRoute : weatherRoute;
-  if (route != std::string::npos) base.resize(route);
+  std::string base = workerBaseUrl(SETTINGS.dashboardWorkerUrl);
   if (base.empty()) return {};
 
-  base += card == Card::Clock ? "/clock.bmp" : "/weather.bmp";
+  switch (card) {
+    case Card::Clock:
+      base += "/clock.bmp";
+      break;
+    case Card::Weather:
+      base += "/weather.bmp";
+      break;
+    case Card::Moon:
+      base += "/moon.bmp";
+      break;
+    case Card::Rss:
+      base += "/rss.bmp";
+      break;
+    case Card::Today:
+      base += "/today.bmp";
+      break;
+    case Card::Quote:
+      base += "/quote.bmp";
+      break;
+    case Card::Bitcoin:
+      base += "/bitcoin.bmp";
+      break;
+    case Card::Solar:
+      base += "/solar.bmp";
+      break;
+    case Card::CustomImage:
+      break;
+  }
   base += gpio.deviceIsX3() ? "?device=x3" : "?device=x4";
   base += SETTINGS.lockScreenOrientation == CrossPointSettings::LOCK_ORIENT_PORTRAIT ? "&orientation=portrait"
                                                                                      : "&orientation=landscape";
+  if (card == Card::Rss) {
+    base += "&feed=" + urlEncode(SETTINGS.rssFeedUrl);
+    if (SETTINGS.rssFeedTitle[0] != '\0') base += "&title=" + urlEncode(SETTINGS.rssFeedTitle);
+  } else if (card == Card::Today) {
+    base += "&lang=" + urlEncode(SETTINGS.todayLanguage[0] != '\0' ? SETTINGS.todayLanguage : "en");
+  } else if (card == Card::Bitcoin) {
+    static constexpr const char* CURRENCIES[] = {"USD", "GBP", "EUR"};
+    const uint8_t currency = SETTINGS.bitcoinCurrency < CrossPointSettings::BITCOIN_CURRENCY_COUNT
+                                 ? SETTINGS.bitcoinCurrency
+                                 : CrossPointSettings::BITCOIN_GBP;
+    base += "&currency=";
+    base += CURRENCIES[currency];
+  }
   return base;
 }
 
 const char* RemoteImageDashboardActivity::configuredUrl() const {
-  return card == Card::CustomImage ? SETTINGS.customImageUrl : SETTINGS.dashboardWorkerUrl;
+  if (card == Card::CustomImage) return SETTINGS.customImageUrl;
+  if (SETTINGS.dashboardWorkerUrl[0] == '\0') return SETTINGS.dashboardWorkerUrl;
+  return card == Card::Rss ? SETTINGS.rssFeedUrl : SETTINGS.dashboardWorkerUrl;
 }
 
 char* RemoteImageDashboardActivity::configuredUrlBuffer() const {
-  return card == Card::CustomImage ? SETTINGS.customImageUrl : SETTINGS.dashboardWorkerUrl;
+  if (card == Card::CustomImage) return SETTINGS.customImageUrl;
+  if (SETTINGS.dashboardWorkerUrl[0] == '\0') return SETTINGS.dashboardWorkerUrl;
+  return card == Card::Rss ? SETTINGS.rssFeedUrl : SETTINGS.dashboardWorkerUrl;
 }
 
 size_t RemoteImageDashboardActivity::configuredUrlCapacity() const {
-  return card == Card::CustomImage ? sizeof(SETTINGS.customImageUrl) : sizeof(SETTINGS.dashboardWorkerUrl);
+  if (card == Card::CustomImage) return sizeof(SETTINGS.customImageUrl);
+  if (SETTINGS.dashboardWorkerUrl[0] == '\0') return sizeof(SETTINGS.dashboardWorkerUrl);
+  return card == Card::Rss ? sizeof(SETTINGS.rssFeedUrl) : sizeof(SETTINGS.dashboardWorkerUrl);
 }
 
 const char* RemoteImageDashboardActivity::imagePath() const {
@@ -465,6 +545,18 @@ const char* RemoteImageDashboardActivity::imagePath() const {
       return "/.crosspoint/clock-image.bmp";
     case Card::Weather:
       return "/.crosspoint/weather-image.bmp";
+    case Card::Moon:
+      return "/.crosspoint/moon-image.bmp";
+    case Card::Rss:
+      return "/.crosspoint/rss-image.bmp";
+    case Card::Today:
+      return "/.crosspoint/today-image.bmp";
+    case Card::Quote:
+      return "/.crosspoint/quote-image.bmp";
+    case Card::Bitcoin:
+      return "/.crosspoint/bitcoin-image.bmp";
+    case Card::Solar:
+      return "/.crosspoint/solar-image.bmp";
     case Card::CustomImage:
       return "/.crosspoint/custom-image.bmp";
   }
@@ -477,6 +569,18 @@ const char* RemoteImageDashboardActivity::tempPath() const {
       return "/.crosspoint/clock-image.tmp";
     case Card::Weather:
       return "/.crosspoint/weather-image.tmp";
+    case Card::Moon:
+      return "/.crosspoint/moon-image.tmp";
+    case Card::Rss:
+      return "/.crosspoint/rss-image.tmp";
+    case Card::Today:
+      return "/.crosspoint/today-image.tmp";
+    case Card::Quote:
+      return "/.crosspoint/quote-image.tmp";
+    case Card::Bitcoin:
+      return "/.crosspoint/bitcoin-image.tmp";
+    case Card::Solar:
+      return "/.crosspoint/solar-image.tmp";
     case Card::CustomImage:
       return "/.crosspoint/custom-image.tmp";
   }
@@ -489,6 +593,18 @@ const char* RemoteImageDashboardActivity::backupPath() const {
       return "/.crosspoint/clock-image.bak";
     case Card::Weather:
       return "/.crosspoint/weather-image.bak";
+    case Card::Moon:
+      return "/.crosspoint/moon-image.bak";
+    case Card::Rss:
+      return "/.crosspoint/rss-image.bak";
+    case Card::Today:
+      return "/.crosspoint/today-image.bak";
+    case Card::Quote:
+      return "/.crosspoint/quote-image.bak";
+    case Card::Bitcoin:
+      return "/.crosspoint/bitcoin-image.bak";
+    case Card::Solar:
+      return "/.crosspoint/solar-image.bak";
     case Card::CustomImage:
       return "/.crosspoint/custom-image.bak";
   }
@@ -501,6 +617,18 @@ const char* RemoteImageDashboardActivity::title() const {
       return tr(STR_CLOCK_DASHBOARD);
     case Card::Weather:
       return tr(STR_WEATHER_DASHBOARD);
+    case Card::Moon:
+      return tr(STR_MOON_DASHBOARD);
+    case Card::Rss:
+      return tr(STR_RSS_DASHBOARD);
+    case Card::Today:
+      return tr(STR_TODAY_DASHBOARD);
+    case Card::Quote:
+      return tr(STR_QUOTE_DASHBOARD);
+    case Card::Bitcoin:
+      return tr(STR_BITCOIN_DASHBOARD);
+    case Card::Solar:
+      return tr(STR_SOLAR_DASHBOARD);
     case Card::CustomImage:
       return tr(STR_CUSTOM_IMAGE_DASHBOARD);
   }
@@ -508,7 +636,9 @@ const char* RemoteImageDashboardActivity::title() const {
 }
 
 const char* RemoteImageDashboardActivity::urlLabel() const {
-  return card == Card::CustomImage ? tr(STR_CUSTOM_IMAGE_URL) : tr(STR_DASHBOARD_WORKER_URL);
+  if (card == Card::CustomImage) return tr(STR_CUSTOM_IMAGE_URL);
+  if (card == Card::Rss && SETTINGS.dashboardWorkerUrl[0] != '\0') return tr(STR_RSS_FEED_URL);
+  return tr(STR_DASHBOARD_WORKER_URL);
 }
 
 uint8_t RemoteImageDashboardActivity::refreshMinutes() const {
@@ -517,6 +647,18 @@ uint8_t RemoteImageDashboardActivity::refreshMinutes() const {
       return SETTINGS.clockRefreshMinutes;
     case Card::Weather:
       return SETTINGS.weatherRefreshMinutes;
+    case Card::Moon:
+      return SETTINGS.moonRefreshMinutes;
+    case Card::Rss:
+      return SETTINGS.rssRefreshMinutes;
+    case Card::Today:
+      return SETTINGS.todayRefreshMinutes;
+    case Card::Quote:
+      return SETTINGS.quoteRefreshMinutes;
+    case Card::Bitcoin:
+      return SETTINGS.bitcoinRefreshMinutes;
+    case Card::Solar:
+      return SETTINGS.solarRefreshMinutes;
     case Card::CustomImage:
       return SETTINGS.customImageRefreshMinutes;
   }
@@ -529,6 +671,18 @@ uint8_t RemoteImageDashboardActivity::activeDashboardMode() const {
       return CrossPointState::DASHBOARD_REMOTE_CLOCK;
     case Card::Weather:
       return CrossPointState::DASHBOARD_REMOTE_WEATHER;
+    case Card::Moon:
+      return CrossPointState::DASHBOARD_REMOTE_MOON;
+    case Card::Rss:
+      return CrossPointState::DASHBOARD_REMOTE_RSS;
+    case Card::Today:
+      return CrossPointState::DASHBOARD_REMOTE_TODAY;
+    case Card::Quote:
+      return CrossPointState::DASHBOARD_REMOTE_QUOTE;
+    case Card::Bitcoin:
+      return CrossPointState::DASHBOARD_REMOTE_BITCOIN;
+    case Card::Solar:
+      return CrossPointState::DASHBOARD_REMOTE_SOLAR;
     case Card::CustomImage:
       return CrossPointState::DASHBOARD_CUSTOM_IMAGE;
   }
@@ -614,17 +768,23 @@ void RemoteImageDashboardActivity::render(RenderLock&&) {
   switch (state) {
     case State::Connecting:
     case State::Fetching:
-      // During unattended sleep-screen refreshes, leave the last known-good
-      // dashboard visible while WiFi and HTTPS run. Only first use (no cache)
-      // needs the explicit updating screen.
-      if (autoRefresh && (!cachedImageAvailable || !renderCachedImage())) {
-        renderDefaultSleepScreen();
-      } else if (!autoRefresh) {
-        renderMessage(tr(STR_REMOTE_IMAGE_UPDATING));
+      // Leave the last known-good dashboard visible while WiFi and HTTPS run.
+      // Only first use, when no cache exists, needs an explicit status screen.
+      if (!cachedImageAvailable || !renderCachedImage()) {
+        if (autoRefresh)
+          renderDefaultSleepScreen();
+        else
+          renderMessage(tr(STR_REMOTE_IMAGE_UPDATING));
       }
       break;
     case State::Failed:
-      renderFailure();
+      if (!cachedImageAvailable || !renderCachedImage()) {
+        if (autoRefresh) {
+          renderDefaultSleepScreen();
+        } else {
+          renderMessage(errorMessage ? errorMessage : tr(STR_REMOTE_IMAGE_FETCH_FAILED));
+        }
+      }
       break;
     case State::Showing:
       if (!renderCachedImage()) {
@@ -686,65 +846,6 @@ void RemoteImageDashboardActivity::renderMessage(const char* message) const {
   renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 5, message);
 
   if (!autoRefresh && state == State::Failed) {
-    const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_REMOTE_IMAGE_CHANGE_URL), "", "");
-    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-  }
-  renderer.displayBuffer();
-}
-
-void RemoteImageDashboardActivity::renderFailure() const {
-  const int pageHeight = renderer.getScreenHeight();
-  renderer.clearScreen();
-  renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 100, title(), true, EpdFontFamily::BOLD);
-  renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 55, "REFRESH DIAGNOSTIC", true, EpdFontFamily::BOLD);
-  renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 15, failureStage ? failureStage : "UNKNOWN");
-
-  const char* stage = "NONE";
-  switch (downloadDiagnostics.stage) {
-    case HttpDownloader::DiagnosticStage::Cancelled:
-      stage = "CANCELLED";
-      break;
-    case HttpDownloader::DiagnosticStage::TimedOut:
-      stage = "TIMEOUT";
-      break;
-    case HttpDownloader::DiagnosticStage::ClientInit:
-      stage = "CLIENT INIT";
-      break;
-    case HttpDownloader::DiagnosticStage::Open:
-      stage = "HTTPS OPEN";
-      break;
-    case HttpDownloader::DiagnosticStage::Headers:
-      stage = "HTTP HEADERS";
-      break;
-    case HttpDownloader::DiagnosticStage::HttpStatus:
-      stage = "HTTP STATUS";
-      break;
-    case HttpDownloader::DiagnosticStage::Read:
-      stage = "BODY READ";
-      break;
-    case HttpDownloader::DiagnosticStage::Incomplete:
-      stage = "INCOMPLETE BODY";
-      break;
-    case HttpDownloader::DiagnosticStage::FileOpen:
-      stage = "SD FILE OPEN";
-      break;
-    case HttpDownloader::DiagnosticStage::FileWrite:
-      stage = "SD FILE WRITE";
-      break;
-    case HttpDownloader::DiagnosticStage::Empty:
-      stage = "EMPTY RESPONSE";
-      break;
-    case HttpDownloader::DiagnosticStage::None:
-      break;
-  }
-  renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 20, stage);
-
-  char details[80];
-  snprintf(details, sizeof(details), "ERR %d   HTTP %d   BYTES %u", downloadDiagnostics.errorCode,
-           downloadDiagnostics.httpStatus, static_cast<unsigned>(downloadDiagnostics.bytesReceived));
-  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 55, details);
-
-  if (!autoRefresh) {
     const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_REMOTE_IMAGE_CHANGE_URL), "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   }

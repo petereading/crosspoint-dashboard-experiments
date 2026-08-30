@@ -80,7 +80,8 @@ class ActivityManager {
   // Will replace currentActivity and drop all activities on stack
   void replaceActivity(std::unique_ptr<Activity>&& newActivity);
 
-  // goTo... functions are convenient wrapper for replaceActivity()
+  // Most goTo... functions replace the current activity. Dashboard previews
+  // are pushed so Back returns to the Lock Screens menu.
   void goToFileTransfer();
   void goToSettings();
   void goToFileBrowser(std::string path = {});
@@ -89,6 +90,12 @@ class ActivityManager {
   void goToClockDashboard();
   void goToWeatherDashboard();
   void goToCustomImageDashboard();
+  void goToMoonDashboard();
+  void goToRssDashboard();
+  void goToTodayDashboard();
+  void goToQuoteDashboard();
+  void goToBitcoinDashboard();
+  void goToSolarDashboard();
   void goToLockScreens();
   // Launch the SETTINGS.sleepLockScreenType dashboard in unattended
   // (autoRefresh) mode, for the LOCK_SCREEN sleep-screen behavior.

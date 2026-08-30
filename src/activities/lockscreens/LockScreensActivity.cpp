@@ -37,6 +37,24 @@ void LockScreensActivity::loop() {
       case 2:
         onCustomImageOpen();
         break;
+      case 3:
+        onMoonOpen();
+        break;
+      case 4:
+        onRssOpen();
+        break;
+      case 5:
+        onTodayOpen();
+        break;
+      case 6:
+        onQuoteOpen();
+        break;
+      case 7:
+        onBitcoinOpen();
+        break;
+      case 8:
+        onSolarOpen();
+        break;
       default:
         break;
     }
@@ -55,9 +73,12 @@ void LockScreensActivity::render(RenderLock&&) {
   renderer.clearScreen();
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_LOCK_SCREENS));
 
-  const std::vector<const char*> items = {tr(STR_CLOCK_DASHBOARD), tr(STR_WEATHER_DASHBOARD),
-                                          tr(STR_CUSTOM_IMAGE_DASHBOARD)};
-  const std::vector<UIIcon> icons = {UIIcon::Clock, UIIcon::Weather, UIIcon::Image};
+  const std::vector<const char*> items = {
+      tr(STR_CLOCK_DASHBOARD), tr(STR_WEATHER_DASHBOARD), tr(STR_CUSTOM_IMAGE_DASHBOARD),
+      tr(STR_MOON_DASHBOARD),  tr(STR_RSS_DASHBOARD),     tr(STR_TODAY_DASHBOARD),
+      tr(STR_QUOTE_DASHBOARD), tr(STR_BITCOIN_DASHBOARD), tr(STR_SOLAR_DASHBOARD)};
+  const std::vector<UIIcon> icons = {UIIcon::Clock, UIIcon::Weather, UIIcon::Image,  UIIcon::Clock,  UIIcon::Github,
+                                     UIIcon::Book,  UIIcon::Image,   UIIcon::Github, UIIcon::Weather};
 
   GUI.drawButtonMenu(
       renderer,
@@ -78,3 +99,15 @@ void LockScreensActivity::onClockOpen() { activityManager.goToClockDashboard(); 
 void LockScreensActivity::onWeatherOpen() { activityManager.goToWeatherDashboard(); }
 
 void LockScreensActivity::onCustomImageOpen() { activityManager.goToCustomImageDashboard(); }
+
+void LockScreensActivity::onMoonOpen() { activityManager.goToMoonDashboard(); }
+
+void LockScreensActivity::onRssOpen() { activityManager.goToRssDashboard(); }
+
+void LockScreensActivity::onTodayOpen() { activityManager.goToTodayDashboard(); }
+
+void LockScreensActivity::onQuoteOpen() { activityManager.goToQuoteDashboard(); }
+
+void LockScreensActivity::onBitcoinOpen() { activityManager.goToBitcoinDashboard(); }
+
+void LockScreensActivity::onSolarOpen() { activityManager.goToSolarDashboard(); }

@@ -351,6 +351,8 @@ void RemoteImageDashboardActivity::runFetch() {
 
   LOG_INF("REMOTE", "Downloading configured dashboard image");
   lastHttpStatus = 0;
+  lastBytesReceived = 0;
+  const unsigned long fetchStartedAt = millis();
   const auto downloadResult = downloadDashboardImage();
   if (downloadResult == HttpDownloader::ABORTED && autoRefresh && powerLatchTriggered()) {
     LOG_INF("REMOTE", "Dashboard download cancelled by power button");
@@ -358,12 +360,15 @@ void RemoteImageDashboardActivity::runFetch() {
     return;
   }
   if (downloadResult != HttpDownloader::OK) {
-    LOG_ERR("REMOTE", "Image download failed: %d (HTTP %d)", static_cast<int>(downloadResult), lastHttpStatus);
+    const unsigned long fetchElapsedS = (millis() - fetchStartedAt + 500) / 1000;
+    LOG_ERR("REMOTE", "Image download failed: %d (HTTP %d, %u bytes in %lu s)", static_cast<int>(downloadResult),
+            lastHttpStatus, static_cast<unsigned>(lastBytesReceived), fetchElapsedS);
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_FETCH_FAILED);
     switch (downloadResult) {
       case HttpDownloader::TIMED_OUT:
-        snprintf(statusDetail, sizeof(statusDetail), "fetch timed out");
+        snprintf(statusDetail, sizeof(statusDetail), "timeout: %uB in %lus", static_cast<unsigned>(lastBytesReceived),
+                 fetchElapsedS);
         break;
       case HttpDownloader::FILE_ERROR:
         snprintf(statusDetail, sizeof(statusDetail), "SD write failed");
@@ -376,7 +381,8 @@ void RemoteImageDashboardActivity::runFetch() {
           snprintf(statusDetail, sizeof(statusDetail), "HTTP %d from worker", lastHttpStatus);
         } else {
           // Never got a status line: DNS, TCP, or the TLS handshake.
-          snprintf(statusDetail, sizeof(statusDetail), "no reply from worker");
+          snprintf(statusDetail, sizeof(statusDetail), "no reply (%uB in %lus)",
+                   static_cast<unsigned>(lastBytesReceived), fetchElapsedS);
         }
         break;
     }
@@ -427,6 +433,7 @@ HttpDownloader::DownloadError RemoteImageDashboardActivity::downloadDashboardIma
     options.bypassCache = true;
     options.cancelRequested = cancelled;
     options.outHttpStatus = &lastHttpStatus;
+    options.outBytesReceived = &lastBytesReceived;
     return HttpDownloader::downloadToFile(dashboardUrl(), tempPath(), options);
   };
 

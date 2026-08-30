@@ -35,6 +35,10 @@ class HttpDownloader {
     // request never got that far. Lets a caller report "HTTP 500" instead of the
     // undifferentiated HTTP_ERROR when a transfer fails.
     int* outHttpStatus = nullptr;
+    // Optional: receives the number of body bytes written before the transfer
+    // ended, however it ended. Separates "never got a byte" (DNS, TCP, TLS)
+    // from "stalled part-way through the body".
+    size_t* outBytesReceived = nullptr;
   };
 
   /**

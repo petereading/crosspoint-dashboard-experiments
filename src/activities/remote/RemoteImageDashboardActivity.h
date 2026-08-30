@@ -64,6 +64,7 @@ class RemoteImageDashboardActivity final : public Activity {
   char statusDetail[48] = {};
   uint16_t cycleCount = 0;
   int lastHttpStatus = 0;
+  size_t lastBytesReceived = 0;
   // Points into RemoteImageValidation's static strings, so it needs no storage.
   const char* lastBmpError = "unknown";
 

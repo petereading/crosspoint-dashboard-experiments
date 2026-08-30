@@ -34,10 +34,17 @@ class RemoteImageDashboardActivity final : public Activity {
   enum class State { Connecting, Fetching, Showing, Failed };
 
   static constexpr unsigned long WIFI_TIMEOUT_MS = 45000;
-  static constexpr unsigned long FETCH_TOTAL_TIMEOUT_MS = 40000;
-  static constexpr unsigned long FETCH_FIRST_ATTEMPT_MS = 18000;
-  static constexpr unsigned long FETCH_OPERATION_TIMEOUT_MS = 15000;
-  static constexpr unsigned long WIFI_RETRY_TIMEOUT_MS = 7000;
+  // Back to the values in the last firmware known to refresh reliably
+  // (f4b689f, and restored once already by e16b6fa). A long per-operation
+  // timeout is not the safe choice it looks like: the first HTTPS attempt after
+  // associating often stalls, and at 15 s one stall eats most of the total
+  // budget, leaving the reconnect-and-retry too little to finish in. At 3 s a
+  // stalled attempt aborts almost immediately and the retry gets a real budget,
+  // which is why the shorter values recover where the longer ones time out.
+  static constexpr unsigned long FETCH_TOTAL_TIMEOUT_MS = 25000;
+  static constexpr unsigned long FETCH_FIRST_ATTEMPT_MS = 9000;
+  static constexpr unsigned long FETCH_OPERATION_TIMEOUT_MS = 3000;
+  static constexpr unsigned long WIFI_RETRY_TIMEOUT_MS = 5000;
   // Cards refreshing at or below this interval keep the radio associated
   // between refreshes; a reconnect costs more time and power than the wait
   // saves, and is less reliable. See finishInteractiveCycle().

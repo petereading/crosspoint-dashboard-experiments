@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <string>
 
 #include "RemoteImageValidation.h"
 
@@ -97,4 +98,32 @@ TEST(RemoteImageBmp, RejectsCompressedOrOversizedImages) {
   auto oversized = oneBitHeader(2049, 792);
   EXPECT_EQ(RemoteImageValidation::validateBmp(oversized.data(), oversized.size(), oneBitFileSize(2049, 792)),
             RemoteImageValidation::BmpError::ImageTooLarge);
+}
+
+TEST(RemoteImageWorkerUrl, StripsCardRouteQueryAndTrailingSlash) {
+  EXPECT_EQ(RemoteImageValidation::workerBaseUrl("https://dash.example.workers.dev"),
+            "https://dash.example.workers.dev");
+  EXPECT_EQ(RemoteImageValidation::workerBaseUrl("https://dash.example.workers.dev/"),
+            "https://dash.example.workers.dev");
+  EXPECT_EQ(RemoteImageValidation::workerBaseUrl("  https://dash.example.workers.dev/clock.bmp?tz=Europe/London  "),
+            "https://dash.example.workers.dev");
+  EXPECT_EQ(RemoteImageValidation::workerBaseUrl("https://dash.example.workers.dev/today.bmp"),
+            "https://dash.example.workers.dev");
+}
+
+TEST(RemoteImageWorkerUrl, KeepsASubPathWorkerDeployment) {
+  // A Worker on a route like example.com/crosspoint/* must keep its prefix,
+  // otherwise every card 404s against the bare origin.
+  EXPECT_EQ(RemoteImageValidation::workerBaseUrl("https://example.com/crosspoint"), "https://example.com/crosspoint");
+  EXPECT_EQ(RemoteImageValidation::workerBaseUrl("https://example.com/crosspoint/"), "https://example.com/crosspoint");
+  EXPECT_EQ(RemoteImageValidation::workerBaseUrl("https://example.com/crosspoint/weather.bmp"),
+            "https://example.com/crosspoint");
+  EXPECT_EQ(RemoteImageValidation::workerBaseUrl("https://example.com:8443/dash?x=1"), "https://example.com:8443/dash");
+}
+
+TEST(RemoteImageWorkerUrl, IsIdempotentAndHandlesEmptyInput) {
+  const std::string once = RemoteImageValidation::workerBaseUrl("https://example.com/crosspoint/rss.bmp?feed=x");
+  EXPECT_EQ(RemoteImageValidation::workerBaseUrl(once), once);
+  EXPECT_TRUE(RemoteImageValidation::workerBaseUrl("").empty());
+  EXPECT_TRUE(RemoteImageValidation::workerBaseUrl("   ").empty());
 }

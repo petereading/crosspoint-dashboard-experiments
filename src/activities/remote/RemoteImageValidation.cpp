@@ -40,6 +40,30 @@ bool isHttpsUrl(const std::string_view url) {
   });
 }
 
+std::string workerBaseUrl(const std::string_view url) {
+  constexpr std::string_view WHITESPACE = " \t\r\n";
+  const size_t first = url.find_first_not_of(WHITESPACE);
+  if (first == std::string_view::npos) return {};
+  std::string base(url.substr(first, url.find_last_not_of(WHITESPACE) - first + 1));
+
+  // Everything after the host is the caller's own path, so only strip what the
+  // firmware appends itself: the query/fragment, then one trailing card route.
+  const size_t scheme = base.find("://");
+  const size_t hostStart = scheme == std::string::npos ? 0 : scheme + 3;
+  const size_t query = base.find_first_of("?#", hostStart);
+  if (query != std::string::npos) base.resize(query);
+
+  constexpr std::string_view BMP_SUFFIX = ".bmp";
+  const size_t lastSlash = base.rfind('/');
+  if (lastSlash != std::string::npos && lastSlash >= hostStart && base.size() > lastSlash + BMP_SUFFIX.size() &&
+      base.compare(base.size() - BMP_SUFFIX.size(), BMP_SUFFIX.size(), BMP_SUFFIX) == 0) {
+    base.resize(lastSlash);
+  }
+
+  while (!base.empty() && base.back() == '/') base.pop_back();
+  return base;
+}
+
 BmpError validateBmp(const uint8_t* header, const size_t headerSize, const uint64_t fileSize, BmpInfo* info) {
   constexpr size_t MIN_HEADER_SIZE = 54;
   constexpr int32_t MAX_IMAGE_WIDTH = 2048;

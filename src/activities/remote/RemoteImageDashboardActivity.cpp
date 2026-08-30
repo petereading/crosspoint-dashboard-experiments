@@ -52,24 +52,7 @@ std::string urlEncode(const char* value) {
   return encoded;
 }
 
-std::string workerBaseUrl(const char* value) {
-  std::string base = value ? value : "";
-  const size_t first = base.find_first_not_of(" \t\r\n");
-  if (first == std::string::npos) return {};
-  const size_t last = base.find_last_not_of(" \t\r\n");
-  base = base.substr(first, last - first + 1);
-
-  // Built-in cards all live at the Worker origin. Discard any pasted card
-  // route, query, or fragment so changing one card cannot break every other
-  // card (for example, /today.bmp must not become /today.bmp/clock.bmp).
-  const size_t scheme = base.find("://");
-  if (scheme != std::string::npos) {
-    const size_t path = base.find_first_of("/?#", scheme + 3);
-    if (path != std::string::npos) base.resize(path);
-  }
-  while (!base.empty() && base.back() == '/') base.pop_back();
-  return base;
-}
+std::string workerBaseUrl(const char* value) { return RemoteImageValidation::workerBaseUrl(value ? value : ""); }
 }  // namespace
 
 void RemoteImageDashboardActivity::onEnter() {

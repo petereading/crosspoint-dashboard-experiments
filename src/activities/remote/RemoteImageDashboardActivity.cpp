@@ -5,6 +5,7 @@
 #include <BoardConfig.h>
 #include <GfxRenderer.h>
 #include <HalGPIO.h>
+#include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Logging.h>
@@ -108,11 +109,7 @@ void RemoteImageDashboardActivity::onEnter() {
 void RemoteImageDashboardActivity::onExit() {
   stopPowerLatch();
   Activity::onExit();
-  if (wifiUsed && WiFi.getMode() != WIFI_MODE_NULL) {
-    WiFi.disconnect(false);
-    WiFi.mode(WIFI_OFF);
-    delay(30);
-  }
+  if (wifiUsed) shutdownWifi();
 }
 
 void RemoteImageDashboardActivity::promptUrl() {
@@ -162,6 +159,12 @@ void RemoteImageDashboardActivity::beginUpdate() {
   errorMessage = nullptr;
   nextInteractiveRefreshAt = 0;
 
+  // The radio cannot be brought up at the idle clock: WiFi.mode() never returns
+  // at LOW_POWER_FREQ (see enterLockScreenSleep in main.cpp). An interactive card
+  // lets the clock drop between refreshes, so restore full speed here — before
+  // any WiFi call, not at the end of the loop iteration where skipLoopDelay acts.
+  powerManager.setPowerSaving(false);
+
   if (WiFi.status() == WL_CONNECTED) {
     state = State::Fetching;
     if (!autoRefresh && !cachedImageAvailable) requestUpdate();
@@ -169,20 +172,7 @@ void RemoteImageDashboardActivity::beginUpdate() {
   }
 
   wifiUsed = true;
-  if (autoRefresh) {
-    startDirectWifiConnect();
-    return;
-  }
-
-  startActivityForResult(std::make_unique<WifiSelectionActivity>(renderer, mappedInput),
-                         [this](const ActivityResult& result) {
-                           if (result.isCancelled || WiFi.status() != WL_CONNECTED) {
-                             finish();
-                             return;
-                           }
-                           state = State::Fetching;
-                           requestUpdate();
-                         });
+  startDirectWifiConnect();
 }
 
 void RemoteImageDashboardActivity::startDirectWifiConnect() {
@@ -194,20 +184,58 @@ void RemoteImageDashboardActivity::startDirectWifiConnect() {
   const std::string lastSsid = WIFI_STORE.getLastConnectedSsid();
   const WifiCredential* cred = lastSsid.empty() ? nullptr : WIFI_STORE.findCredential(lastSsid);
   if (!cred) {
+    if (!autoRefresh) {
+      // First interactive use, or the saved network was forgotten: let the user
+      // pick one. Later refreshes reconnect to it directly, without the picker.
+      promptWifiSelection();
+      return;
+    }
     LOG_ERR("REMOTE", "No saved WiFi network for unattended refresh");
     state = State::Failed;
     errorMessage = tr(STR_DASHBOARD_WIFI_FAILED);
     return;
   }
 
-  LOG_INF("REMOTE", "Unattended refresh: connecting to %s", cred->ssid.c_str());
+  LOG_INF("REMOTE", "Connecting to %s", cred->ssid.c_str());
   WiFi.mode(WIFI_STA);
-  // The device returns to deep sleep immediately after the fetch, so modem
-  // sleep saves little here and can add multi-second latency to short TLS
-  // transfers on marginal links.
+  // The radio is powered down again as soon as the fetch ends (deep sleep when
+  // unattended, shutdownWifi() when interactive), so modem sleep saves little
+  // here and can add multi-second latency to short TLS transfers on marginal
+  // links.
   WiFi.setSleep(false);
   WiFi.begin(cred->ssid.c_str(), cred->password.empty() ? nullptr : cred->password.c_str());
   wifiConnectStart = millis();
+}
+
+void RemoteImageDashboardActivity::promptWifiSelection() {
+  // Keep the connect deadline armed across the picker so a resumed Connecting
+  // state can never see a stale zero and time out on its first poll.
+  wifiConnectStart = millis();
+  startActivityForResult(std::make_unique<WifiSelectionActivity>(renderer, mappedInput),
+                         [this](const ActivityResult& result) {
+                           if (result.isCancelled || WiFi.status() != WL_CONNECTED) {
+                             finish();
+                             return;
+                           }
+                           state = State::Fetching;
+                           requestUpdate();
+                         });
+}
+
+void RemoteImageDashboardActivity::shutdownWifi() {
+  if (WiFi.getMode() == WIFI_MODE_NULL) return;
+  WiFi.disconnect(false);
+  WiFi.mode(WIFI_OFF);
+  delay(30);
+  LOG_DBG("REMOTE", "Radio off until the next refresh");
+}
+
+// End of an interactive refresh: drop the radio and arm the next one. The card
+// stays on screen, and allowClockThrottle() now lets the CPU idle down too, so
+// the wait costs about as much as a static sleep screen.
+void RemoteImageDashboardActivity::finishInteractiveCycle() {
+  shutdownWifi();
+  scheduleNextInteractiveRefresh();
 }
 
 void RemoteImageDashboardActivity::loop() {
@@ -230,16 +258,20 @@ void RemoteImageDashboardActivity::loop() {
 
   switch (state) {
     case State::Connecting:
-      if (!autoRefresh) return;
       if (WiFi.status() == WL_CONNECTED) {
         state = State::Fetching;
         return;
       }
       if (millis() - wifiConnectStart >= WIFI_TIMEOUT_MS) {
-        LOG_ERR("REMOTE", "Unattended WiFi connect timed out");
+        LOG_ERR("REMOTE", "WiFi connect timed out");
         state = State::Failed;
         errorMessage = tr(STR_DASHBOARD_WIFI_FAILED);
         requestUpdateAndWait();
+        if (!autoRefresh) {
+          // Keep the card on screen and retry on its normal interval.
+          finishInteractiveCycle();
+          return;
+        }
         if (powerLatchTriggered()) {
           returnToUser();
           return;
@@ -325,7 +357,7 @@ void RemoteImageDashboardActivity::runFetch() {
     }
     goToSleepAndPoll();
   } else {
-    scheduleNextInteractiveRefresh();
+    finishInteractiveCycle();
   }
 }
 

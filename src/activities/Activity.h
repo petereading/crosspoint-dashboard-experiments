@@ -43,6 +43,14 @@ class Activity {
 
   virtual bool skipLoopDelay() { return false; }
   virtual bool preventAutoSleep() { return false; }
+  // Only consulted while preventAutoSleep() is true. Blocking auto-sleep normally
+  // also pins the CPU at full speed, which is right for an activity that is busy
+  // (a download, an OTA). An activity that holds the screen for long idle
+  // stretches instead — a lock-screen card between refreshes — returns true here
+  // to let the clock drop to LOW_POWER_FREQ while it waits. It is then that
+  // activity's job to call powerManager.setPowerSaving(false) before touching the
+  // radio: WiFi.mode() never returns at the low-power clock.
+  virtual bool allowClockThrottle() { return false; }
   virtual bool isReaderActivity() const { return false; }
   virtual ScreenshotInfo getScreenshotInfo() const { return {}; }
 

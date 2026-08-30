@@ -629,9 +629,19 @@ void loop() {
 
   // Check for any user activity (button press or release) or active background work
   static unsigned long lastActivityTime = millis();
-  if (gpio.wasAnyPressed() || gpio.wasAnyReleased() || halTiltSensor.hadActivity() ||
-      activityManager.preventAutoSleep()) {
-    lastActivityTime = millis();         // Reset inactivity timer
+  static unsigned long lastFullSpeedTime = millis();
+  const bool userActivity = gpio.wasAnyPressed() || gpio.wasAnyReleased() || halTiltSensor.hadActivity();
+  const bool activityBusy = activityManager.preventAutoSleep();
+  if (userActivity || activityBusy) {
+    lastActivityTime = millis();  // Reset inactivity timer
+  }
+  // Blocking auto-sleep normally also holds the CPU at full speed, which is what
+  // a download or an OTA needs. An activity that instead sits idle on screen for
+  // long stretches (a lock-screen card between refreshes) opts out via
+  // allowClockThrottle() so the clock can drop while it waits; it restores full
+  // speed itself before bringing the radio up.
+  if (userActivity || (activityBusy && !activityManager.allowClockThrottle())) {
+    lastFullSpeedTime = millis();
     powerManager.setPowerSaving(false);  // Restore normal CPU frequency on user activity
   }
 
@@ -725,7 +735,7 @@ void loop() {
     powerManager.setPowerSaving(false);  // Make sure we're at full performance when skipLoopDelay is requested
     yield();                             // Give FreeRTOS a chance to run tasks, but return immediately
   } else {
-    if (millis() - lastActivityTime >= HalPowerManager::IDLE_POWER_SAVING_MS) {
+    if (millis() - lastFullSpeedTime >= HalPowerManager::IDLE_POWER_SAVING_MS) {
       // If we've been inactive for a while, increase the delay to save power
       powerManager.setPowerSaving(true);  // Lower CPU frequency after extended inactivity
       delay(50);

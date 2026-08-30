@@ -21,6 +21,10 @@ class RemoteImageDashboardActivity final : public Activity {
   void render(RenderLock&&) override;
   bool skipLoopDelay() override { return state == State::Connecting || state == State::Fetching; }
   bool preventAutoSleep() override { return autoRefresh || state != State::Failed; }
+  // An open card is a display, not a busy task: between refreshes it holds a
+  // static e-ink frame with the radio off, so let the CPU idle down. beginUpdate()
+  // restores full speed before the next connect.
+  bool allowClockThrottle() override { return !autoRefresh && (state == State::Showing || state == State::Failed); }
 
  private:
   enum class State { Connecting, Fetching, Showing, Failed };
@@ -47,6 +51,9 @@ class RemoteImageDashboardActivity final : public Activity {
   void promptUrl();
   void beginUpdate();
   void startDirectWifiConnect();
+  void promptWifiSelection();
+  void shutdownWifi();
+  void finishInteractiveCycle();
   void runFetch();
   HttpDownloader::DownloadError downloadDashboardImage();
   bool reconnectWifiForRetry(unsigned long timeoutMs);

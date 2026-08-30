@@ -70,6 +70,10 @@ const FONT = {
   "/": [1, 2, 2, 4, 8, 8, 16],
   ".": [0, 0, 0, 0, 0, 12, 12],
   "%": [17, 2, 4, 8, 17, 0, 0],
+  "'": [4, 4, 8, 0, 0, 0, 0],
+  "&": [12, 18, 20, 8, 21, 18, 13],
+  "+": [0, 4, 4, 31, 4, 4, 0],
+  "=": [0, 0, 31, 0, 31, 0, 0],
   "?": [14, 17, 1, 2, 4, 0, 4],
 };
 
@@ -135,10 +139,13 @@ function drawCircle(canvas, cx, cy, radius, thickness = 1) {
 
 function cleanText(text) {
   return String(text || "")
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, " ")
+    .replace(/[–—]/g, "-")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toUpperCase()
-    .replace(/[^A-Z0-9 :\-/.%]/g, " ")
+    .replace(/[^A-Z0-9 :\-/.%'&]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -167,9 +174,45 @@ function drawText(canvas, text, x, y, scale) {
 }
 
 function drawTextCentered(canvas, text, y, scale, maxWidth = WIDTH - 24) {
-  const clean = cleanText(text);
+  let clean = cleanText(text);
   while (scale > 1 && textWidth(clean, scale) > maxWidth) scale--;
+  while (clean && textWidth(clean, scale) > maxWidth) clean = clean.slice(0, -1).trim();
   drawText(canvas, clean, Math.floor((WIDTH - textWidth(clean, scale)) / 2), y, scale);
+}
+
+function wrapText(text, scale, maxWidth, maxLines) {
+  const words = cleanText(text).split(" ").filter(Boolean);
+  const lines = [];
+  let line = "";
+
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (textWidth(candidate, scale) <= maxWidth) {
+      line = candidate;
+      continue;
+    }
+    if (line) lines.push(line);
+    line = word;
+    while (line && textWidth(line, scale) > maxWidth) line = line.slice(0, -1).trim();
+    if (lines.length === maxLines) break;
+  }
+  if (line && lines.length < maxLines) lines.push(line);
+
+  if (lines.length === maxLines) {
+    const consumed = lines.join(" ").split(" ").length;
+    if (consumed < words.length) {
+      let last = lines[maxLines - 1];
+      while (last && textWidth(`${last}.`, scale) > maxWidth) last = last.slice(0, -1).trim();
+      lines[maxLines - 1] = `${last}.`;
+    }
+  }
+  return lines;
+}
+
+function drawWrappedText(canvas, text, x, y, scale, maxWidth, maxLines, lineHeight = 9 * scale) {
+  const lines = wrapText(text, scale, maxWidth, maxLines);
+  lines.forEach((line, index) => drawText(canvas, line, x, y + index * lineHeight, scale));
+  return lines.length;
 }
 
 function makeBmp(canvas) {
@@ -318,6 +361,12 @@ function conditionLabel(code) {
   return labels[code] || "CLOUDY";
 }
 
+function currentConditionLabel(code, isDay) {
+  if (code === 0) return isDay === 0 ? "CLEAR" : "SUNNY";
+  if (code === 1) return isDay === 0 ? "MOSTLY CLEAR" : "MOSTLY SUNNY";
+  return conditionLabel(code);
+}
+
 function drawCloud(canvas, cx, cy, size) {
   const s = size / 100;
   fillCircle(canvas, cx - 24 * s, cy + 2 * s, Math.round(19 * s));
@@ -342,6 +391,24 @@ function drawSun(canvas, cx, cy, size) {
       Math.max(1, Math.round(size / 35))
     );
   }
+}
+
+function drawSunEventIcon(canvas, cx, cy, size, rising) {
+  const radius = Math.max(5, Math.round(size * 0.18));
+  const horizonY = cy + Math.round(size * 0.11);
+  drawCircle(canvas, cx, horizonY, radius, Math.max(2, Math.round(size / 20)));
+  fillRect(canvas, cx - radius - 3, horizonY, radius * 2 + 7, radius + 4, false);
+  drawLine(canvas, cx - size * 0.42, horizonY, cx + size * 0.42, horizonY, Math.max(2, Math.round(size / 18)));
+  drawLine(canvas, cx, cy - size * 0.34, cx, cy - size * 0.18, 2);
+  drawLine(canvas, cx - size * 0.29, cy - size * 0.2, cx - size * 0.18, cy - size * 0.1, 2);
+  drawLine(canvas, cx + size * 0.29, cy - size * 0.2, cx + size * 0.18, cy - size * 0.1, 2);
+  const arrowX = cx + size * 0.31;
+  const arrowTipY = rising ? cy - size * 0.12 : cy + size * 0.34;
+  const arrowTailY = rising ? cy + size * 0.34 : cy - size * 0.12;
+  const headY = arrowTipY + (rising ? size * 0.09 : -size * 0.09);
+  drawLine(canvas, arrowX, arrowTailY, arrowX, arrowTipY, 2);
+  drawLine(canvas, arrowX, arrowTipY, arrowX - size * 0.08, headY, 2);
+  drawLine(canvas, arrowX, arrowTipY, arrowX + size * 0.08, headY, 2);
 }
 
 function drawWeatherIcon(canvas, code, cx, cy, size) {
@@ -409,74 +476,78 @@ function renderWeatherBmp(place, weather, imperial, orientation, device) {
   const windUnit = imperial ? "MPH" : "KM/H";
   const sunrise = updatedLabel(daily.sunrise?.[0]);
   const sunset = updatedLabel(daily.sunset?.[0]);
+  const condition = currentConditionLabel(current.weather_code, current.is_day);
 
   if (orientation === "landscape") {
     const compact = HEIGHT < 500;
-    drawTextCentered(canvas, place.label, compact ? 14 : 18, 5, WIDTH - 30);
-    drawTextCentered(canvas, "WEATHER", compact ? 55 : 63, 2);
-    fillRect(canvas, 20, compact ? 82 : 91, WIDTH - 40, 3);
+    drawTextCentered(canvas, place.label, compact ? 10 : 14, 5, WIDTH - 30);
+    drawTextCentered(canvas, condition, compact ? 50 : 54, 3, WIDTH - 36);
+    fillRect(canvas, 20, compact ? 78 : 84, WIDTH - 40, 3);
 
-    drawWeatherIcon(canvas, current.weather_code, 122, compact ? 165 : 181, 115);
-    drawTextCenteredInBox(canvas, `${Math.round(current.temperature_2m)}${tempUnit}`, 215, 260, compact ? 110 : 122, 13);
-    drawTextCenteredInBox(canvas, conditionLabel(current.weather_code), 20, 465, compact ? 230 : 251, 4);
+    drawWeatherIcon(canvas, current.weather_code, 118, compact ? 157 : 170, 108);
+    drawTextCenteredInBox(canvas, `${Math.round(current.temperature_2m)}${tempUnit}`, 205, 280, compact ? 109 : 118, 13);
 
-    drawRect(canvas, 505, compact ? 96 : 108, 265, compact ? 156 : 166, 2);
+    const sunY = compact ? 231 : 246;
+    drawSunEventIcon(canvas, 51, sunY, 42, true);
+    drawText(canvas, "SUNRISE", 80, sunY - 23, 2);
+    drawText(canvas, sunrise, 80, sunY + 2, 3);
+    drawSunEventIcon(canvas, 274, sunY, 42, false);
+    drawText(canvas, "SUNSET", 303, sunY - 23, 2);
+    drawText(canvas, sunset, 303, sunY + 2, 3);
+
+    const detailsX = 505;
+    const detailsWidth = WIDTH - detailsX - 20;
+    drawRect(canvas, detailsX, compact ? 95 : 101, detailsWidth, compact ? 166 : 174, 2);
     drawTextCenteredInBox(
       canvas,
       `FEELS ${Math.round(current.apparent_temperature)}${tempUnit}`,
-      505,
-      265,
-      compact ? 113 : 126,
+      detailsX,
+      detailsWidth,
+      compact ? 114 : 122,
       3
     );
     drawTextCenteredInBox(
       canvas,
       `HUM ${Math.round(current.relative_humidity_2m)}%`,
-      505,
-      265,
-      compact ? 145 : 161,
+      detailsX,
+      detailsWidth,
+      compact ? 151 : 161,
       3
     );
     drawTextCenteredInBox(
       canvas,
       `WIND ${Math.round(current.wind_speed_10m)} ${windUnit}`,
-      505,
-      265,
-      compact ? 177 : 196,
+      detailsX,
+      detailsWidth,
+      compact ? 188 : 200,
       3
     );
     drawTextCenteredInBox(
       canvas,
       `RAIN ${Math.round(daily.precipitation_probability_max[0] || 0)}%`,
-      505,
-      265,
-      compact ? 209 : 231,
+      detailsX,
+      detailsWidth,
+      compact ? 225 : 239,
       3
-    );
-    drawTextCenteredInBox(
-      canvas,
-      `RISE ${sunrise} SET ${sunset}`,
-      505,
-      265,
-      compact ? 232 : 253,
-      2
     );
 
     const days = Math.min(5, daily.time.length);
-    const gap = 8;
-    const cardWidth = Math.floor((WIDTH - 30 - gap * (days - 1)) / days);
+    const gap = 12;
+    const cardWidth = Math.floor((WIDTH - 36 - gap * (days - 1)) / days);
     const startX = Math.floor((WIDTH - (cardWidth * days + gap * (days - 1))) / 2);
+    const cardsY = compact ? 280 : 296;
+    const cardsHeight = compact ? 145 : 176;
     for (let i = 0; i < days; i++) {
       const x = startX + i * (cardWidth + gap);
-      drawRect(canvas, x, compact ? 275 : 305, cardWidth, compact ? 145 : 162, 2);
-      drawTextCenteredInBox(canvas, dayLabel(daily.time[i]), x, cardWidth, compact ? 286 : 316, 3);
-      drawWeatherIcon(canvas, daily.weather_code[i], x + cardWidth / 2, compact ? 342 : 376, 48);
+      drawRect(canvas, x, cardsY, cardWidth, cardsHeight, 2);
+      drawTextCenteredInBox(canvas, dayLabel(daily.time[i]), x, cardWidth, cardsY + 12, 3);
+      drawWeatherIcon(canvas, daily.weather_code[i], x + cardWidth / 2, cardsY + (compact ? 67 : 74), 48);
       drawTextCenteredInBox(
         canvas,
         `${Math.round(daily.temperature_2m_max[i])}${tempUnit}`,
         x,
         cardWidth,
-        compact ? 376 : 413,
+        cardsY + (compact ? 101 : 115),
         3
       );
       drawTextCenteredInBox(
@@ -484,58 +555,64 @@ function renderWeatherBmp(place, weather, imperial, orientation, device) {
         `${Math.round(daily.temperature_2m_min[i])}${tempUnit}`,
         x,
         cardWidth,
-        compact ? 401 : 442,
+        cardsY + (compact ? 124 : 144),
         2
       );
     }
 
-    drawTextCentered(canvas, `UPDATED ${updatedLabel(current.time)} LOCAL`, compact ? 441 : 483, 2);
-    drawTextCentered(canvas, "DATA OPEN-METEO", compact ? 463 : 506, 2);
+    drawTextCentered(canvas, `UPDATED ${updatedLabel(current.time)} LOCAL`, HEIGHT - 31, 2);
+    drawTextCentered(canvas, "DATA OPEN-METEO", HEIGHT - 14, 1);
     return makeBmp(canvas);
   }
 
-  drawTextCentered(canvas, place.label, 28, 6, WIDTH - 30);
-  drawTextCentered(canvas, "WEATHER", 84, 3);
-  fillRect(canvas, 24, 120, WIDTH - 48, 3);
+  drawTextCentered(canvas, place.label, 24, 6, WIDTH - 30);
+  drawTextCentered(canvas, condition, 78, 4, WIDTH - 30);
+  fillRect(canvas, 24, 114, WIDTH - 48, 3);
 
   const iconX = Math.round(WIDTH * 0.269);
   const temperatureX = Math.round(WIDTH * 0.483);
-  drawWeatherIcon(canvas, current.weather_code, iconX, 229, 135);
-  drawTextCenteredInBox(canvas, `${Math.round(current.temperature_2m)}${tempUnit}`, temperatureX, WIDTH - temperatureX - 18, 178, 13);
-  drawTextCentered(canvas, conditionLabel(current.weather_code), 320, 5, WIDTH - 30);
+  drawWeatherIcon(canvas, current.weather_code, iconX, 216, 128);
+  drawTextCenteredInBox(canvas, `${Math.round(current.temperature_2m)}${tempUnit}`, temperatureX, WIDTH - temperatureX - 18, 166, 13);
 
-  drawRect(canvas, 25, 374, WIDTH - 50, 92, 2);
+  const half = Math.floor(WIDTH / 2);
+  drawSunEventIcon(canvas, 54, 327, 48, true);
+  drawText(canvas, "SUNRISE", 88, 302, 2);
+  drawText(canvas, sunrise, 88, 332, 4);
+  drawSunEventIcon(canvas, half + 28, 327, 48, false);
+  drawText(canvas, "SUNSET", half + 62, 302, 2);
+  drawText(canvas, sunset, half + 62, 332, 4);
+
+  drawRect(canvas, 25, 376, WIDTH - 50, 72, 2);
   drawTextCentered(
     canvas,
     `FEELS ${Math.round(current.apparent_temperature)}${tempUnit}   HUM ${Math.round(current.relative_humidity_2m)}%`,
-    389,
+    390,
     3,
     WIDTH - 70
   );
   drawTextCentered(
     canvas,
     `WIND ${Math.round(current.wind_speed_10m)} ${windUnit}   RAIN ${Math.round(daily.precipitation_probability_max[0] || 0)}%`,
-    417,
+    420,
     3,
     WIDTH - 70
   );
-  drawTextCentered(canvas, `SUNRISE ${sunrise}   SUNSET ${sunset}`, 445, 2, WIDTH - 70);
 
   const days = Math.min(5, daily.time.length);
-  const gap = 7;
-  const cardWidth = Math.floor((WIDTH - 30 - gap * (days - 1)) / days);
+  const gap = 10;
+  const cardWidth = Math.floor((WIDTH - 36 - gap * (days - 1)) / days);
   const startX = Math.floor((WIDTH - (cardWidth * days + gap * (days - 1))) / 2);
   for (let i = 0; i < days; i++) {
     const x = startX + i * (cardWidth + gap);
-    drawRect(canvas, x, 475, cardWidth, 188, 2);
-    drawTextCenteredInBox(canvas, dayLabel(daily.time[i]), x, cardWidth, 490, 3);
-    drawWeatherIcon(canvas, daily.weather_code[i], x + cardWidth / 2, 555, 55);
+    drawRect(canvas, x, 467, cardWidth, 184, 2);
+    drawTextCenteredInBox(canvas, dayLabel(daily.time[i]), x, cardWidth, 482, 3);
+    drawWeatherIcon(canvas, daily.weather_code[i], x + cardWidth / 2, 547, 53);
     drawTextCenteredInBox(
       canvas,
       `${Math.round(daily.temperature_2m_max[i])}${tempUnit}`,
       x,
       cardWidth,
-      600,
+      592,
       3
     );
     drawTextCenteredInBox(
@@ -543,19 +620,20 @@ function renderWeatherBmp(place, weather, imperial, orientation, device) {
       `${Math.round(daily.temperature_2m_min[i])}${tempUnit}`,
       x,
       cardWidth,
-      630,
+      622,
       2
     );
   }
 
-  drawTextCentered(canvas, `UPDATED ${updatedLabel(current.time)} LOCAL`, 704, 3);
-  drawTextCentered(canvas, "DATA OPEN-METEO", 744, 2);
+  drawTextCentered(canvas, `UPDATED ${updatedLabel(current.time)} LOCAL`, HEIGHT - 49, 2);
+  drawTextCentered(canvas, "DATA OPEN-METEO", HEIGHT - 22, 1);
   return makeBmp(canvas);
 }
 
 function drawTextCenteredInBox(canvas, text, x, width, y, scale) {
-  const clean = cleanText(text);
+  let clean = cleanText(text);
   while (scale > 1 && textWidth(clean, scale) > width - 8) scale--;
+  while (clean && textWidth(clean, scale) > width - 8) clean = clean.slice(0, -1).trim();
   drawText(canvas, clean, x + Math.floor((width - textWidth(clean, scale)) / 2), y, scale);
 }
 
@@ -617,7 +695,7 @@ async function fetchWeather(place, imperial) {
   apiUrl.searchParams.set("longitude", String(place.longitude));
   apiUrl.searchParams.set(
     "current",
-    "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m"
+    "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day"
   );
   apiUrl.searchParams.set(
     "daily",
@@ -633,6 +711,313 @@ async function fetchWeather(place, imperial) {
   const data = await response.json();
   if (!data.current || !data.daily?.time?.length) throw new Error("Incomplete weather response");
   return data;
+}
+
+const SYNODIC_MONTH_MS = 29.530588853 * 86400000;
+const NEW_MOON_EPOCH_MS = Date.UTC(2000, 0, 6, 18, 14);
+
+function moonState(now) {
+  const cycles = (now.getTime() - NEW_MOON_EPOCH_MS) / SYNODIC_MONTH_MS;
+  const phase = ((cycles % 1) + 1) % 1;
+  const illumination = (1 - Math.cos(phase * Math.PI * 2)) / 2;
+  const names = [
+    "NEW MOON",
+    "WAXING CRESCENT",
+    "FIRST QUARTER",
+    "WAXING GIBBOUS",
+    "FULL MOON",
+    "WANING GIBBOUS",
+    "LAST QUARTER",
+    "WANING CRESCENT",
+  ];
+  return { phase, illumination, label: names[Math.round(phase * 8) % 8] };
+}
+
+function drawMoonDisk(canvas, cx, cy, radius, phase) {
+  fillCircle(canvas, cx, cy, radius, true);
+  const cosine = Math.cos(phase * Math.PI * 2);
+  for (let y = -radius + 3; y <= radius - 3; y++) {
+    const halfWidth = Math.floor(Math.sqrt((radius - 3) ** 2 - y * y));
+    if (phase <= 0.5) {
+      const start = Math.ceil(cosine * halfWidth);
+      for (let x = start; x <= halfWidth; x++) setPixel(canvas, cx + x, cy + y, false);
+    } else {
+      const end = Math.floor(-cosine * halfWidth);
+      for (let x = -halfWidth; x <= end; x++) setPixel(canvas, cx + x, cy + y, false);
+    }
+  }
+  const innerRadiusSquared = (radius - 3) ** 2;
+  const outerRadiusSquared = radius ** 2;
+  for (let y = -radius; y <= radius; y++) {
+    for (let x = -radius; x <= radius; x++) {
+      const distanceSquared = x * x + y * y;
+      if (distanceSquared >= innerRadiusSquared && distanceSquared <= outerRadiusSquared) {
+        setPixel(canvas, cx + x, cy + y, true);
+      }
+    }
+  }
+}
+
+function datePartsInZone(date, timeZone) {
+  try {
+    const formatter = new Intl.DateTimeFormat("en-GB", {
+      timeZone,
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    });
+    const parts = {};
+    for (const part of formatter.formatToParts(date)) {
+      if (part.type !== "literal") parts[part.type] = part.value;
+    }
+    return {
+      date: `${parts.day} ${parts.month.toUpperCase()} ${parts.year}`,
+      short: `${parts.day} ${parts.month.toUpperCase()} ${parts.hour}:${parts.minute}`,
+      time: `${parts.hour}:${parts.minute}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function approximateMoonPhases(now) {
+  const phaseNames = ["NEW MOON", "FIRST QUARTER", "FULL MOON", "LAST QUARTER"];
+  const cycle = (now.getTime() - NEW_MOON_EPOCH_MS) / SYNODIC_MONTH_MS;
+  const currentCycle = Math.floor(cycle);
+  const moments = [];
+  for (let offset = 0; offset < 2; offset++) {
+    for (let quarter = 0; quarter < 4; quarter++) {
+      const time = NEW_MOON_EPOCH_MS + (currentCycle + offset + quarter / 4) * SYNODIC_MONTH_MS;
+      if (time > now.getTime()) moments.push({ phase: phaseNames[quarter], date: new Date(time) });
+    }
+  }
+  return moments.sort((a, b) => a.date - b.date).slice(0, 4);
+}
+
+async function fetchMoonPhases(now) {
+  const date = now.toISOString().slice(0, 10);
+  try {
+    const response = await fetch(`https://aa.usno.navy.mil/api/moon/phases/date?date=${date}&nump=4`, {
+      headers: { accept: "application/json", "user-agent": "CrossPointDashboard/1.0" },
+    });
+    if (!response.ok) throw new Error("Moon service failed");
+    const data = await response.json();
+    if (!Array.isArray(data.phasedata) || data.phasedata.length < 4) throw new Error("Incomplete moon response");
+    const phases = data.phasedata.slice(0, 4).map((entry) => {
+      const [hour, minute] = String(entry.time || "00:00").split(":").map(Number);
+      return {
+        phase: cleanText(entry.phase),
+        date: new Date(Date.UTC(Number(entry.year), Number(entry.month) - 1, Number(entry.day), hour, minute)),
+      };
+    });
+    return { phases, source: "PHASE DATA USNO" };
+  } catch {
+    return { phases: approximateMoonPhases(now), source: "PHASES APPROXIMATE" };
+  }
+}
+
+function renderMoonBmp(now, timeZone, phaseData, orientation, device) {
+  setCanvasDimensions(device, orientation);
+  const canvas = new Uint8Array(PIXEL_ROW_BYTES * HEIGHT);
+  const state = moonState(now);
+  const local = datePartsInZone(now, timeZone);
+  if (!local) return null;
+
+  if (orientation === "landscape") {
+    const compact = HEIGHT < 500;
+    drawTextCentered(canvas, "MOON", compact ? 12 : 16, 6);
+    drawTextCentered(canvas, local.date, compact ? 60 : 68, 3);
+    fillRect(canvas, 20, compact ? 88 : 98, WIDTH - 40, 3);
+    drawMoonDisk(canvas, 145, compact ? 202 : 218, compact ? 92 : 100, state.phase);
+    drawTextCenteredInBox(canvas, state.label, 285, WIDTH - 305, compact ? 137 : 151, 5);
+    drawTextCenteredInBox(
+      canvas,
+      `${Math.round(state.illumination * 100)}% ILLUMINATED`,
+      285,
+      WIDTH - 305,
+      compact ? 198 : 216,
+      3
+    );
+    drawTextCenteredInBox(canvas, shortLocationLabel(timeZone), 285, WIDTH - 305, compact ? 244 : 267, 2);
+
+    const startY = compact ? 307 : 335;
+    const gap = 10;
+    const width = Math.floor((WIDTH - 36 - gap * 3) / 4);
+    phaseData.phases.forEach((item, index) => {
+      const x = 18 + index * (width + gap);
+      drawRect(canvas, x, startY, width, compact ? 116 : 132, 2);
+      drawTextCenteredInBox(canvas, item.phase, x, width, startY + 14, 2);
+      const parts = datePartsInZone(item.date, timeZone);
+      drawTextCenteredInBox(canvas, parts?.short || "--", x, width, startY + 55, 2);
+    });
+    drawTextCentered(canvas, phaseData.source, HEIGHT - 17, 1);
+    return makeBmp(canvas);
+  }
+
+  drawTextCentered(canvas, "MOON", 24, 7);
+  drawTextCentered(canvas, local.date, 86, 3);
+  fillRect(canvas, 24, 120, WIDTH - 48, 3);
+  drawMoonDisk(canvas, Math.floor(WIDTH / 2), 275, 112, state.phase);
+  drawTextCentered(canvas, state.label, 412, 5, WIDTH - 24);
+  drawTextCentered(canvas, `${Math.round(state.illumination * 100)}% ILLUMINATED`, 463, 3);
+  drawTextCentered(canvas, "NEXT PHASES", 516, 3);
+  phaseData.phases.forEach((item, index) => {
+    const y = 555 + index * 42;
+    drawText(canvas, item.phase, 28, y, 2);
+    const parts = datePartsInZone(item.date, timeZone);
+    const value = parts?.short || "--";
+    drawText(canvas, value, WIDTH - 28 - textWidth(value, 2), y, 2);
+    if (index < 3) fillRect(canvas, 28, y + 27, WIDTH - 56, 1);
+  });
+  drawTextCentered(canvas, phaseData.source, HEIGHT - 19, 1);
+  return makeBmp(canvas);
+}
+
+function decodeXmlText(value) {
+  return String(value || "")
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, "$1")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&#(\d+);/g, (_, number) => String.fromCodePoint(Number(number)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, number) => String.fromCodePoint(parseInt(number, 16)))
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;|&#39;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractXmlTag(xml, tag) {
+  const match = String(xml).match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, "i"));
+  return match ? decodeXmlText(match[1]) : "";
+}
+
+function validateFeedUrl(value) {
+  let feedUrl;
+  try {
+    feedUrl = new URL(value);
+  } catch {
+    return null;
+  }
+  if (feedUrl.protocol !== "https:") return null;
+  const host = feedUrl.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host.endsWith(".local") || host === "::1" || host === "0.0.0.0") return null;
+  const octets = host.split(".").map(Number);
+  if (
+    octets.length === 4 &&
+    octets.every((part) => Number.isInteger(part) && part >= 0 && part <= 255) &&
+    (octets[0] === 10 ||
+      octets[0] === 127 ||
+      (octets[0] === 169 && octets[1] === 254) ||
+      (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+      (octets[0] === 192 && octets[1] === 168))
+  ) {
+    return null;
+  }
+  return feedUrl;
+}
+
+async function fetchRss(feedUrl) {
+  const response = await fetch(feedUrl, {
+    redirect: "follow",
+    headers: {
+      accept: "application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.5",
+      "user-agent": "CrossPointDashboard/1.0",
+    },
+  });
+  if (!response.ok) throw new Error("RSS feed download failed");
+  const contentLength = Number(response.headers.get("content-length") || 0);
+  if (contentLength > 524288) throw new Error("RSS feed is too large");
+  const xml = (await response.text()).slice(0, 524289);
+  if (xml.length > 524288) throw new Error("RSS feed is too large");
+
+  const itemMatches = [...xml.matchAll(/<item\b[\s\S]*?<\/item>/gi)];
+  const entryMatches = itemMatches.length ? [] : [...xml.matchAll(/<entry\b[\s\S]*?<\/entry>/gi)];
+  const blocks = (itemMatches.length ? itemMatches : entryMatches).map((match) => match[0]);
+  const items = blocks.map((block) => extractXmlTag(block, "title")).filter(Boolean).slice(0, 6);
+  if (!items.length) throw new Error("No RSS headlines found");
+
+  const beforeFirstItem = xml.slice(0, Math.max(0, xml.search(/<(?:item|entry)\b/i)) || xml.length);
+  const title = extractXmlTag(beforeFirstItem, "title") || feedUrl.hostname;
+  return { title, items };
+}
+
+function renderListBmp(kind, title, items, footer, orientation, device) {
+  setCanvasDimensions(device, orientation);
+  const canvas = new Uint8Array(PIXEL_ROW_BYTES * HEIGHT);
+
+  if (orientation === "landscape") {
+    const compact = HEIGHT < 500;
+    drawTextCentered(canvas, title, compact ? 10 : 14, 5, WIDTH - 30);
+    drawTextCentered(canvas, kind, compact ? 53 : 58, 2);
+    fillRect(canvas, 20, compact ? 79 : 86, WIDTH - 40, 3);
+    const count = Math.min(items.length, 4);
+    const columns = 2;
+    const rows = Math.ceil(count / columns);
+    const areaTop = compact ? 100 : 108;
+    const areaBottom = HEIGHT - 38;
+    const cellWidth = Math.floor((WIDTH - 50) / 2);
+    const cellHeight = Math.floor((areaBottom - areaTop - 10) / rows);
+    for (let index = 0; index < count; index++) {
+      const column = index % 2;
+      const row = Math.floor(index / 2);
+      const x = 20 + column * (cellWidth + 10);
+      const y = areaTop + row * cellHeight;
+      drawRect(canvas, x, y, cellWidth, cellHeight - 10, 2);
+      const kicker = cleanText(items[index].kicker || String(index + 1));
+      drawText(canvas, kicker, x + 13, y + 13, 3);
+      drawWrappedText(canvas, items[index].text, x + 13, y + 53, 2, cellWidth - 26, compact ? 3 : 4, 22);
+    }
+    drawTextCentered(canvas, footer, HEIGHT - 17, 1);
+    return makeBmp(canvas);
+  }
+
+  drawTextCentered(canvas, title, 24, 5, WIDTH - 30);
+  drawTextCentered(canvas, kind, 75, 2);
+  fillRect(canvas, 24, 108, WIDTH - 48, 3);
+  const count = Math.min(items.length, kind === "RSS HEADLINES" ? 5 : 4);
+  const areaTop = 126;
+  const areaBottom = HEIGHT - 42;
+  const cellHeight = Math.floor((areaBottom - areaTop) / count);
+  for (let index = 0; index < count; index++) {
+    const y = areaTop + index * cellHeight;
+    const kicker = cleanText(items[index].kicker || String(index + 1));
+    drawText(canvas, kicker, 24, y + 14, kicker.length > 3 ? 3 : 4);
+    const textX = kind === "TODAY IN HISTORY" ? 112 : 72;
+    drawWrappedText(canvas, items[index].text, textX, y + 12, 2, WIDTH - textX - 22, 3, 23);
+    if (index < count - 1) fillRect(canvas, 24, y + cellHeight - 2, WIDTH - 48, 1);
+  }
+  drawTextCentered(canvas, footer, HEIGHT - 19, 1);
+  return makeBmp(canvas);
+}
+
+async function fetchWikipediaToday(language, now, timeZone) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const month = parts.find((part) => part.type === "month")?.value || String(now.getUTCMonth() + 1).padStart(2, "0");
+  const day = parts.find((part) => part.type === "day")?.value || String(now.getUTCDate()).padStart(2, "0");
+  const endpoint = `https://api.wikimedia.org/feed/v1/wikipedia/${language}/onthisday/events/${month}/${day}`;
+  const response = await fetch(endpoint, {
+    headers: {
+      accept: "application/json",
+      "user-agent": "CrossPointDashboard/1.0 (https://github.com/petereading/crosspoint-dashboard-experiments)",
+    },
+  });
+  if (!response.ok) throw new Error("Wikipedia Today service failed");
+  const data = await response.json();
+  const events = (data.events || [])
+    .filter((event) => event?.text && Number.isFinite(Number(event.year)))
+    .slice(0, 6)
+    .map((event) => ({ kicker: String(event.year), text: event.text }));
+  if (!events.length) throw new Error("No Wikipedia events found");
+  return events;
 }
 
 function textResponse(message, status = 200) {
@@ -669,6 +1054,9 @@ export default {
           "/weather.bmp?location=Sydney,AU&orientation=landscape\n\n" +
           "Weather, exact coordinates:\n/weather.bmp?lat=51.5072&lon=-0.1276&label=London\n\n" +
           "Weather, imperial units:\n/weather.bmp?location=New York,US&units=imperial\n\n" +
+          "Moon phases:\n/moon.bmp\n/moon.bmp?tz=Australia/Sydney&orientation=landscape\n\n" +
+          "RSS headlines (URL encode the feed value):\n/rss.bmp?feed=https%3A%2F%2Fexample.com%2Ffeed.xml\n\n" +
+          "Wikipedia Today:\n/today.bmp\n/today.bmp?lang=en&orientation=landscape\n\n" +
           "Device defaults to X3. Use device=x3 or device=x4.\n" +
           "Orientation defaults to portrait. Use orientation=portrait or orientation=landscape.\n"
       );
@@ -688,6 +1076,65 @@ export default {
       const bmp = renderClockBmp(timeZone, orientation, device);
       if (!bmp) return textResponse("Invalid IANA time zone. Example: Europe/London", 400);
       return bmpResponse(request, bmp, "clock.bmp");
+    }
+
+    if (url.pathname === "/moon.bmp") {
+      const timeZone = resolveClockTimeZone(url, request);
+      if (!getClockParts(new Date(), timeZone)) {
+        return textResponse("Invalid IANA time zone. Example: Europe/London", 400);
+      }
+      const now = new Date();
+      const phaseData = await fetchMoonPhases(now);
+      const bmp = renderMoonBmp(now, timeZone, phaseData, orientation, device);
+      return bmpResponse(request, bmp, "moon.bmp");
+    }
+
+    if (url.pathname === "/rss.bmp") {
+      const feedUrl = validateFeedUrl(url.searchParams.get("feed") || "");
+      if (!feedUrl) return textResponse("feed must be a public HTTPS RSS or Atom URL", 400);
+      try {
+        const feed = await fetchRss(feedUrl);
+        const override = cleanText(url.searchParams.get("title") || "");
+        const timeZone = resolveClockTimeZone(url, request);
+        const fetched = datePartsInZone(new Date(), timeZone);
+        if (!fetched) return textResponse("Invalid IANA time zone. Example: Europe/London", 400);
+        const items = feed.items.map((text, index) => ({ kicker: String(index + 1), text }));
+        const bmp = renderListBmp(
+          "RSS HEADLINES",
+          override || feed.title,
+          items,
+          `FETCHED ${fetched.time}  SOURCE ${feedUrl.hostname}`,
+          orientation,
+          device
+        );
+        return bmpResponse(request, bmp, "rss.bmp");
+      } catch (error) {
+        return textResponse(error instanceof Error ? error.message : "RSS generation failed", 502);
+      }
+    }
+
+    if (url.pathname === "/today.bmp") {
+      const language = (url.searchParams.get("lang") || "en").trim().toLowerCase();
+      if (!/^[a-z][a-z0-9-]{1,11}$/.test(language)) return textResponse("lang must be a Wikipedia language code", 400);
+      const timeZone = resolveClockTimeZone(url, request);
+      const now = new Date();
+      const local = datePartsInZone(now, timeZone);
+      if (!local) return textResponse("Invalid IANA time zone. Example: Europe/London", 400);
+      try {
+        const events = await fetchWikipediaToday(language, now, timeZone);
+        const title = local.date.replace(/ \d{4}$/, "");
+        const bmp = renderListBmp(
+          "TODAY IN HISTORY",
+          title,
+          events,
+          `DATA WIKIPEDIA ${language.toUpperCase()}  CC BY-SA`,
+          orientation,
+          device
+        );
+        return bmpResponse(request, bmp, "today.bmp");
+      } catch (error) {
+        return textResponse(error instanceof Error ? error.message : "Wikipedia Today generation failed", 502);
+      }
     }
 
     if (url.pathname !== "/weather.bmp") return textResponse("Not found", 404);

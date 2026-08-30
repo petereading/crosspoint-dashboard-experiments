@@ -42,12 +42,28 @@ WiFi credentials are shared with the rest of CrossPoint.
 For Custom Image, generate an uncompressed BMP. Native portrait sizes are X3 528×792 and X4 480×800, with reversed
 dimensions for landscape. The renderer accepts its existing 1-, 2-, 4-, 8-, 24-, and 32-bit uncompressed BMP formats.
 
-The paste-ready [Cloudflare dashboard Worker](./examples/cloudflare-dashboard-worker.js) generates both clock and
-weather cards as one-bit BMPs. A single deployment serves `/clock.bmp` and `/weather.bmp`; new card routes can
-be added to the same Worker later. Weather data comes from Open-Meteo and supports automatic IP location, worldwide
-place-name lookup, exact coordinates, metric or imperial units, a five-day forecast, and a local last-updated time. Add
-`device=x3` for 528×792 or `device=x4` for 480×800, plus `orientation=portrait` or `orientation=landscape`. Omitting
-`device` keeps backward compatibility by defaulting to X3. The firmware supplies both parameters automatically.
+The paste-ready [Cloudflare dashboard Worker](./examples/cloudflare-dashboard-worker.js) generates Clock, Weather,
+Moon, RSS, and Wikipedia Today cards as one-bit BMPs from one deployment:
+
+- `/clock.bmp?tz=Europe/London`
+- `/weather.bmp?location=London,GB`
+- `/moon.bmp?tz=Europe/London`
+- `/rss.bmp?feed=https%3A%2F%2Fexample.com%2Ffeed.xml&title=NEWS`
+- `/today.bmp?lang=en&tz=Europe/London`
+
+Clock and Weather are selectable directly in the current firmware. Until dedicated menu entries are added, test Moon,
+RSS, and Wikipedia Today by selecting **Custom Image** and entering the complete route URL. RSS accepts public HTTPS
+RSS or Atom feeds; URL-encode the value passed to `feed=`. Moon uses the U.S. Naval Observatory for the next four key
+phases and falls back to an approximate synodic-cycle calculation when that service is unavailable. Wikipedia Today
+uses Wikimedia's current On This Day feed; Wikimedia has announced gradual deprecation of this feed family, so that
+route may need to be updated when a replacement is published. The compact built-in bitmap font is Latin/ASCII only,
+so choose English or another feed/language that can be represented by that character set.
+
+Weather data comes from Open-Meteo and supports automatic IP location, worldwide place-name lookup, exact coordinates,
+metric or imperial units, sunrise and sunset, a five-day forecast, and a local last-updated time. Add `device=x3` for
+528×792 or `device=x4` for 480×800, plus `orientation=portrait` or `orientation=landscape`. Omitting `device` keeps
+backward compatibility by defaulting to X3. The firmware supplies both parameters automatically for Clock and Weather;
+include them explicitly in Custom Image URLs when needed.
 
 **Roadmap:** if the feature attracts wider use, add a small URL-builder webpage for advanced location, units, and card
 options. The first firmware release deliberately keeps setup to one Worker base URL and the on-device card choice.

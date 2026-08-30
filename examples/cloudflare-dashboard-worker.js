@@ -411,6 +411,19 @@ function drawSunEventIcon(canvas, cx, cy, size, rising) {
   drawLine(canvas, arrowX, arrowTipY, arrowX + size * 0.08, headY, 2);
 }
 
+function drawSunEventGroup(canvas, centerX, cy, label, time, size, rising, timeScale) {
+  const labelScale = 2;
+  const iconWidth = Math.round(size * 0.84);
+  const gap = Math.max(10, Math.round(size * 0.22));
+  const textBlockWidth = Math.max(textWidth(label, labelScale), textWidth(time, timeScale));
+  const groupWidth = iconWidth + gap + textBlockWidth;
+  const startX = Math.round(centerX - groupWidth / 2);
+  const textX = startX + iconWidth + gap;
+  drawSunEventIcon(canvas, startX + iconWidth / 2, cy, size, rising);
+  drawText(canvas, label, textX + Math.floor((textBlockWidth - textWidth(label, labelScale)) / 2), cy - 25, labelScale);
+  drawText(canvas, time, textX + Math.floor((textBlockWidth - textWidth(time, timeScale)) / 2), cy + 5, timeScale);
+}
+
 function drawWeatherIcon(canvas, code, cx, cy, size) {
   const category = weatherCategory(code);
   const scale = size / 100;
@@ -488,22 +501,19 @@ function renderWeatherBmp(place, weather, imperial, orientation, device) {
     drawTextCenteredInBox(canvas, `${Math.round(current.temperature_2m)}${tempUnit}`, 205, 280, compact ? 109 : 118, 13);
 
     const sunY = compact ? 231 : 246;
-    drawSunEventIcon(canvas, 51, sunY, 42, true);
-    drawText(canvas, "SUNRISE", 80, sunY - 23, 2);
-    drawText(canvas, sunrise, 80, sunY + 2, 3);
-    drawSunEventIcon(canvas, 274, sunY, 42, false);
-    drawText(canvas, "SUNSET", 303, sunY - 23, 2);
-    drawText(canvas, sunset, 303, sunY + 2, 3);
+    drawSunEventGroup(canvas, 137, sunY, "SUNRISE", sunrise, 42, true, 3);
+    drawSunEventGroup(canvas, 368, sunY, "SUNSET", sunset, 42, false, 3);
 
     const detailsX = 505;
     const detailsWidth = WIDTH - detailsX - 20;
-    drawRect(canvas, detailsX, compact ? 95 : 101, detailsWidth, compact ? 166 : 174, 2);
+    const detailsY = compact ? 101 : 107;
+    drawRect(canvas, detailsX, detailsY, detailsWidth, compact ? 166 : 174, 2);
     drawTextCenteredInBox(
       canvas,
       `FEELS ${Math.round(current.apparent_temperature)}${tempUnit}`,
       detailsX,
       detailsWidth,
-      compact ? 114 : 122,
+      compact ? 120 : 128,
       3
     );
     drawTextCenteredInBox(
@@ -511,7 +521,7 @@ function renderWeatherBmp(place, weather, imperial, orientation, device) {
       `HUM ${Math.round(current.relative_humidity_2m)}%`,
       detailsX,
       detailsWidth,
-      compact ? 151 : 161,
+      compact ? 157 : 167,
       3
     );
     drawTextCenteredInBox(
@@ -519,7 +529,7 @@ function renderWeatherBmp(place, weather, imperial, orientation, device) {
       `WIND ${Math.round(current.wind_speed_10m)} ${windUnit}`,
       detailsX,
       detailsWidth,
-      compact ? 188 : 200,
+      compact ? 194 : 206,
       3
     );
     drawTextCenteredInBox(
@@ -527,7 +537,7 @@ function renderWeatherBmp(place, weather, imperial, orientation, device) {
       `RAIN ${Math.round(daily.precipitation_probability_max[0] || 0)}%`,
       detailsX,
       detailsWidth,
-      compact ? 225 : 239,
+      compact ? 231 : 245,
       3
     );
 
@@ -535,7 +545,7 @@ function renderWeatherBmp(place, weather, imperial, orientation, device) {
     const gap = 12;
     const cardWidth = Math.floor((WIDTH - 36 - gap * (days - 1)) / days);
     const startX = Math.floor((WIDTH - (cardWidth * days + gap * (days - 1))) / 2);
-    const cardsY = compact ? 280 : 296;
+    const cardsY = compact ? 285 : 301;
     const cardsHeight = compact ? 145 : 176;
     for (let i = 0; i < days; i++) {
       const x = startX + i * (cardWidth + gap);
@@ -574,26 +584,21 @@ function renderWeatherBmp(place, weather, imperial, orientation, device) {
   drawWeatherIcon(canvas, current.weather_code, iconX, 216, 128);
   drawTextCenteredInBox(canvas, `${Math.round(current.temperature_2m)}${tempUnit}`, temperatureX, WIDTH - temperatureX - 18, 166, 13);
 
-  const half = Math.floor(WIDTH / 2);
-  drawSunEventIcon(canvas, 54, 327, 48, true);
-  drawText(canvas, "SUNRISE", 88, 302, 2);
-  drawText(canvas, sunrise, 88, 332, 4);
-  drawSunEventIcon(canvas, half + 28, 327, 48, false);
-  drawText(canvas, "SUNSET", half + 62, 302, 2);
-  drawText(canvas, sunset, half + 62, 332, 4);
+  drawSunEventGroup(canvas, WIDTH / 4, 327, "SUNRISE", sunrise, 48, true, 4);
+  drawSunEventGroup(canvas, (WIDTH * 3) / 4, 327, "SUNSET", sunset, 48, false, 4);
 
-  drawRect(canvas, 25, 376, WIDTH - 50, 72, 2);
+  drawRect(canvas, 25, 394, WIDTH - 50, 72, 2);
   drawTextCentered(
     canvas,
     `FEELS ${Math.round(current.apparent_temperature)}${tempUnit}   HUM ${Math.round(current.relative_humidity_2m)}%`,
-    390,
+    408,
     3,
     WIDTH - 70
   );
   drawTextCentered(
     canvas,
     `WIND ${Math.round(current.wind_speed_10m)} ${windUnit}   RAIN ${Math.round(daily.precipitation_probability_max[0] || 0)}%`,
-    420,
+    438,
     3,
     WIDTH - 70
   );
@@ -604,15 +609,15 @@ function renderWeatherBmp(place, weather, imperial, orientation, device) {
   const startX = Math.floor((WIDTH - (cardWidth * days + gap * (days - 1))) / 2);
   for (let i = 0; i < days; i++) {
     const x = startX + i * (cardWidth + gap);
-    drawRect(canvas, x, 467, cardWidth, 184, 2);
-    drawTextCenteredInBox(canvas, dayLabel(daily.time[i]), x, cardWidth, 482, 3);
-    drawWeatherIcon(canvas, daily.weather_code[i], x + cardWidth / 2, 547, 53);
+    drawRect(canvas, x, 491, cardWidth, 184, 2);
+    drawTextCenteredInBox(canvas, dayLabel(daily.time[i]), x, cardWidth, 506, 3);
+    drawWeatherIcon(canvas, daily.weather_code[i], x + cardWidth / 2, 571, 53);
     drawTextCenteredInBox(
       canvas,
       `${Math.round(daily.temperature_2m_max[i])}${tempUnit}`,
       x,
       cardWidth,
-      592,
+      616,
       3
     );
     drawTextCenteredInBox(
@@ -620,7 +625,7 @@ function renderWeatherBmp(place, weather, imperial, orientation, device) {
       `${Math.round(daily.temperature_2m_min[i])}${tempUnit}`,
       x,
       cardWidth,
-      622,
+      646,
       2
     );
   }

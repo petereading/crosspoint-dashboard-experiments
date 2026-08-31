@@ -381,8 +381,10 @@ void RemoteImageDashboardActivity::runFetch() {
           // A status line plus a failed transfer means the body did not
           // complete. The byte count says which: nothing at all, or a stall
           // part-way through.
-          snprintf(statusDetail, sizeof(statusDetail), "HTTP %d %uB %lus", lastHttpStatus,
-                   static_cast<unsigned>(lastBytesReceived), fetchElapsedS);
+          snprintf(statusDetail, sizeof(statusDetail), "HTTP %d %uB %lus h%uk/%uk", lastHttpStatus,
+                   static_cast<unsigned>(lastBytesReceived), fetchElapsedS,
+                   static_cast<unsigned>(ESP.getFreeHeap() / 1024),
+                   static_cast<unsigned>(ESP.getMaxAllocHeap() / 1024));
         } else {
           // Never got a status line: DNS, TCP, or the TLS handshake.
           snprintf(statusDetail, sizeof(statusDetail), "no reply %uB %lus", static_cast<unsigned>(lastBytesReceived),
@@ -403,7 +405,8 @@ void RemoteImageDashboardActivity::runFetch() {
   } else {
     cachedImageAvailable = true;
     state = State::Showing;
-    snprintf(statusDetail, sizeof(statusDetail), "ok #%u", static_cast<unsigned>(++cycleCount));
+    snprintf(statusDetail, sizeof(statusDetail), "ok #%u h%uk/%uk", static_cast<unsigned>(++cycleCount),
+             static_cast<unsigned>(ESP.getFreeHeap() / 1024), static_cast<unsigned>(ESP.getMaxAllocHeap() / 1024));
   }
 
   if (autoRefresh && powerLatchTriggered()) {

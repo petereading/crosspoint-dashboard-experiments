@@ -367,22 +367,26 @@ void RemoteImageDashboardActivity::runFetch() {
     errorMessage = tr(STR_REMOTE_IMAGE_FETCH_FAILED);
     switch (downloadResult) {
       case HttpDownloader::TIMED_OUT:
-        snprintf(statusDetail, sizeof(statusDetail), "timeout: %uB in %lus", static_cast<unsigned>(lastBytesReceived),
+        snprintf(statusDetail, sizeof(statusDetail), "timeout %uB %lus", static_cast<unsigned>(lastBytesReceived),
                  fetchElapsedS);
         break;
       case HttpDownloader::FILE_ERROR:
-        snprintf(statusDetail, sizeof(statusDetail), "SD write failed");
+        snprintf(statusDetail, sizeof(statusDetail), "SD write failed %uB", static_cast<unsigned>(lastBytesReceived));
         break;
       case HttpDownloader::ABORTED:
         snprintf(statusDetail, sizeof(statusDetail), "fetch cancelled");
         break;
       default:
         if (lastHttpStatus > 0) {
-          snprintf(statusDetail, sizeof(statusDetail), "HTTP %d from worker", lastHttpStatus);
+          // A status line plus a failed transfer means the body did not
+          // complete. The byte count says which: nothing at all, or a stall
+          // part-way through.
+          snprintf(statusDetail, sizeof(statusDetail), "HTTP %d %uB %lus", lastHttpStatus,
+                   static_cast<unsigned>(lastBytesReceived), fetchElapsedS);
         } else {
           // Never got a status line: DNS, TCP, or the TLS handshake.
-          snprintf(statusDetail, sizeof(statusDetail), "no reply (%uB in %lus)",
-                   static_cast<unsigned>(lastBytesReceived), fetchElapsedS);
+          snprintf(statusDetail, sizeof(statusDetail), "no reply %uB %lus", static_cast<unsigned>(lastBytesReceived),
+                   fetchElapsedS);
         }
         break;
     }
@@ -926,7 +930,10 @@ void RemoteImageDashboardActivity::drawStatusFooter(const int pageWidth, const i
   renderer.getOrientedViewableTRBL(&marginTop, &marginRight, &marginBottom, &marginLeft);
 
   constexpr int BAR_HEIGHT = 18;
-  const int barTop = pageHeight - marginBottom - BAR_HEIGHT;
+  // getOrientedViewableTRBL's bottom margin is not enough on the X3, whose case
+  // overlaps further up the panel; lift the line clear of it.
+  const int extraBezelClearance = pageHeight / 12;
+  const int barTop = pageHeight - marginBottom - extraBezelClearance - BAR_HEIGHT;
   renderer.fillRect(marginLeft, barTop, pageWidth - marginLeft - marginRight, BAR_HEIGHT, false);
   renderer.drawLine(marginLeft, barTop, pageWidth - marginRight, barTop, true);
   renderer.drawCenteredText(SMALL_FONT_ID, barTop + 4, statusDetail);

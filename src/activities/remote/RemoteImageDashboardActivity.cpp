@@ -435,6 +435,7 @@ HttpDownloader::DownloadError RemoteImageDashboardActivity::downloadDashboardIma
     options.operationTimeoutMs = std::min(FETCH_OPERATION_TIMEOUT_MS, budgetMs);
     options.overallTimeoutMs = budgetMs;
     options.bypassCache = true;
+    options.maxStallMs = FETCH_STALL_MS;
     options.cancelRequested = cancelled;
     options.outHttpStatus = &lastHttpStatus;
     options.outBytesReceived = &lastBytesReceived;

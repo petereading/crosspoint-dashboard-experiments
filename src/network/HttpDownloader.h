@@ -39,6 +39,12 @@ class HttpDownloader {
     // ended, however it ended. Separates "never got a byte" (DNS, TCP, TLS)
     // from "stalled part-way through the body".
     size_t* outBytesReceived = nullptr;
+    // How long the body may go without delivering data before the transfer is
+    // called dead. esp_http_client_read() returns 0 for "nothing arrived within
+    // operationTimeoutMs", which is not end-of-stream: on a slow link a live
+    // download pauses regularly. 0 keeps the original behaviour of failing on
+    // the first such pause.
+    uint32_t maxStallMs = 0;
   };
 
   /**

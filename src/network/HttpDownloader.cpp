@@ -34,6 +34,7 @@ struct Sink {
   uint32_t overallTimeoutMs = 0;
   unsigned long startedAtMs = 0;
   bool bypassCache = false;
+  uint32_t maxStallMs = 0;
   int* outHttpStatus = nullptr;
   size_t total = 0;
   size_t downloaded = 0;
@@ -154,6 +155,7 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
     return HttpDownloader::HTTP_ERROR;
   }
 
+  unsigned long lastProgressMs = millis();
   while (true) {
     if (interrupted(sink, &stopResult)) {
       esp_http_client_cleanup(client);
@@ -171,6 +173,10 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
         esp_http_client_cleanup(client);
         return stopResult;
       }
+      // A zero read is a socket timeout, not the end of the body. Give the
+      // transfer until maxStallMs since the last actual data before declaring
+      // it dead; interrupted() still bounds the whole attempt.
+      if (sink.maxStallMs != 0 && millis() - lastProgressMs < sink.maxStallMs) continue;
       LOG_ERR("HTTP", "read stalled after %zu bytes", sink.downloaded);
       esp_http_client_cleanup(client);
       return HttpDownloader::HTTP_ERROR;
@@ -180,6 +186,7 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
       return HttpDownloader::FILE_ERROR;
     }
     sink.downloaded += read;
+    lastProgressMs = millis();
     if (sink.progress && sink.total > 0) sink.progress(sink.downloaded, sink.total);
   }
 
@@ -251,6 +258,7 @@ HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& 
   sink.startedAtMs = millis();
   sink.bypassCache = options.bypassCache;
   sink.outHttpStatus = options.outHttpStatus;
+  sink.maxStallMs = options.maxStallMs;
   sink.write = [&file](const uint8_t* data, size_t len) { return file.write(data, len) == len; };
 
   const DownloadError result = runGet(url, username, password, sink);

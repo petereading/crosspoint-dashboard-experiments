@@ -34,16 +34,22 @@ class RemoteImageDashboardActivity final : public Activity {
   enum class State { Connecting, Fetching, Showing, Failed };
 
   static constexpr unsigned long WIFI_TIMEOUT_MS = 45000;
-  // Back to the values in the last firmware known to refresh reliably
-  // (f4b689f, and restored once already by e16b6fa). A long per-operation
-  // timeout is not the safe choice it looks like: the first HTTPS attempt after
-  // associating often stalls, and at 15 s one stall eats most of the total
-  // budget, leaving the reconnect-and-retry too little to finish in. At 3 s a
-  // stalled attempt aborts almost immediately and the retry gets a real budget,
-  // which is why the shorter values recover where the longer ones time out.
-  static constexpr unsigned long FETCH_TOTAL_TIMEOUT_MS = 25000;
-  static constexpr unsigned long FETCH_FIRST_ATTEMPT_MS = 9000;
+  // Sized from a measured failure rather than guessed. A dashboard BMP is ~53 KB
+  // (X3 792x528, 1bpp) and the device was observed pulling it at roughly 1 KB/s,
+  // so the transfer legitimately needs the better part of a minute; earlier
+  // budgets cut a live download off part-way and reported it as a failure.
+  //
+  // Fail-fast is FETCH_STALL_MS, not the total: a dead socket delivers nothing
+  // and is abandoned in twelve seconds, while a slow-but-progressing one is
+  // allowed to finish. That separation is what previous rounds of tuning these
+  // constants kept conflating -- shortening the total to fail faster only ever
+  // truncated healthy transfers.
+  static constexpr unsigned long FETCH_TOTAL_TIMEOUT_MS = 60000;
+  static constexpr unsigned long FETCH_FIRST_ATTEMPT_MS = 45000;
+  // Per socket operation: short, so a genuinely dead connection is noticed
+  // quickly. A zero read is no longer fatal (see DownloadOptions::maxStallMs).
   static constexpr unsigned long FETCH_OPERATION_TIMEOUT_MS = 3000;
+  static constexpr unsigned long FETCH_STALL_MS = 12000;
   static constexpr unsigned long WIFI_RETRY_TIMEOUT_MS = 5000;
   // Cards refreshing at or below this interval keep the radio associated
   // between refreshes; a reconnect costs more time and power than the wait

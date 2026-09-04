@@ -355,8 +355,11 @@ void RemoteImageDashboardActivity::runFetch() {
   lastHttpStatus = 0;
   lastBytesReceived = 0;
   lastSlowestWriteMs = 0;
+  rssiBeforeFetch = static_cast<int8_t>(WiFi.RSSI());
   const unsigned long fetchStartedAt = millis();
   const auto downloadResult = downloadDashboardImage();
+  rssiAfterFetch = static_cast<int8_t>(WiFi.RSSI());
+  stillAssociatedAfterFetch = WiFi.status() == WL_CONNECTED;
   if (downloadResult == HttpDownloader::ABORTED && autoRefresh && powerLatchTriggered()) {
     LOG_INF("REMOTE", "Dashboard download cancelled by power button");
     returnToUser();
@@ -384,8 +387,9 @@ void RemoteImageDashboardActivity::runFetch() {
           // A status line plus a failed transfer means the body did not
           // complete. The byte count says which: nothing at all, or a stall
           // part-way through.
-          snprintf(statusDetail, sizeof(statusDetail), "HTTP %d %uB %lus m%u/%u sd%lu", lastHttpStatus,
-                   static_cast<unsigned>(lastBytesReceived), fetchElapsedS, maxAllocEnterKb, maxAllocPreFetchKb,
+          snprintf(statusDetail, sizeof(statusDetail), "HTTP %d %uB %lus r%d/%d c%d sd%lu", lastHttpStatus,
+                   static_cast<unsigned>(lastBytesReceived), fetchElapsedS, static_cast<int>(rssiBeforeFetch),
+                   static_cast<int>(rssiAfterFetch), stillAssociatedAfterFetch ? 1 : 0,
                    static_cast<unsigned long>(lastSlowestWriteMs));
         } else {
           // Never got a status line: DNS, TCP, or the TLS handshake.

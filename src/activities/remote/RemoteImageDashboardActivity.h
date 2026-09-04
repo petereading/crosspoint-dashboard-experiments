@@ -85,6 +85,13 @@ class RemoteImageDashboardActivity final : public Activity {
   uint16_t maxAllocPreFetchKb = 0;
   size_t lastBytesReceived = 0;
   uint32_t lastSlowestWriteMs = 0;
+  // Signal strength either side of a transfer, and whether the association
+  // survived it. A body that streams briefly and then goes silent for twelve
+  // seconds, on a link whose storage and memory are both healthy, is what a
+  // marginal or dropping association looks like from inside the fetch.
+  int8_t rssiBeforeFetch = 0;
+  int8_t rssiAfterFetch = 0;
+  bool stillAssociatedAfterFetch = false;
   // Points into RemoteImageValidation's static strings, so it needs no storage.
   const char* lastBmpError = "unknown";
 

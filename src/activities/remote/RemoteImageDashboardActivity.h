@@ -77,7 +77,14 @@ class RemoteImageDashboardActivity final : public Activity {
   char statusDetail[48] = {};
   uint16_t cycleCount = 0;
   int lastHttpStatus = 0;
+  // Largest contiguous block (KB) at three points in a cycle: on entry before
+  // the radio is up, immediately before the transfer, and after it ends. TLS
+  // records need a ~16 KB contiguous allocation, so this triple says whether
+  // the fetch is starved and whether anything could be reclaimed for it.
+  uint16_t maxAllocEnterKb = 0;
+  uint16_t maxAllocPreFetchKb = 0;
   size_t lastBytesReceived = 0;
+  uint32_t lastSlowestWriteMs = 0;
   // Points into RemoteImageValidation's static strings, so it needs no storage.
   const char* lastBmpError = "unknown";
 

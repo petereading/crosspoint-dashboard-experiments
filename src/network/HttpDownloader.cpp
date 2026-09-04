@@ -35,6 +35,7 @@ struct Sink {
   unsigned long startedAtMs = 0;
   bool bypassCache = false;
   uint32_t maxStallMs = 0;
+  uint32_t slowestWriteMs = 0;
   int* outHttpStatus = nullptr;
   size_t total = 0;
   size_t downloaded = 0;
@@ -181,7 +182,11 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
       esp_http_client_cleanup(client);
       return HttpDownloader::HTTP_ERROR;
     }
-    if (!sink.write(reinterpret_cast<const uint8_t*>(buf.get()), read)) {
+    const unsigned long writeStartedAt = millis();
+    const bool written = sink.write(reinterpret_cast<const uint8_t*>(buf.get()), read);
+    const unsigned long writeMs = millis() - writeStartedAt;
+    if (writeMs > sink.slowestWriteMs) sink.slowestWriteMs = static_cast<uint32_t>(writeMs);
+    if (!written) {
       esp_http_client_cleanup(client);
       return HttpDownloader::FILE_ERROR;
     }
@@ -263,6 +268,7 @@ HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& 
 
   const DownloadError result = runGet(url, username, password, sink);
   if (options.outBytesReceived) *options.outBytesReceived = sink.downloaded;
+  if (options.outSlowestWriteMs) *options.outSlowestWriteMs = sink.slowestWriteMs;
   // Close before any remove() on the same path; DESTRUCTOR_CLOSES_FILE would
   // otherwise close only after the remove.
   file.close();

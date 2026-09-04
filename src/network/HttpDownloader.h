@@ -45,6 +45,11 @@ class HttpDownloader {
     // download pauses regularly. 0 keeps the original behaviour of failing on
     // the first such pause.
     uint32_t maxStallMs = 0;
+    // Optional: receives the longest single sink write (ms). A transfer can
+    // stall because the reader stopped reading -- a slow SD write closes the TCP
+    // window and the server goes quiet -- which looks identical to a network
+    // fault from the outside. This tells the two apart.
+    uint32_t* outSlowestWriteMs = nullptr;
   };
 
   /**

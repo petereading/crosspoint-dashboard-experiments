@@ -69,6 +69,7 @@ void RemoteImageDashboardActivity::onEnter() {
     }
   }
 
+  maxAllocEnterKb = static_cast<uint16_t>(ESP.getMaxAllocHeap() / 1024);
   cycleStartMs = millis();
   powerInputArmed = false;
   powerExitRequested = false;
@@ -349,9 +350,11 @@ void RemoteImageDashboardActivity::loop() {
 void RemoteImageDashboardActivity::runFetch() {
   Storage.mkdir("/.crosspoint");
 
-  LOG_INF("REMOTE", "Downloading configured dashboard image");
+  maxAllocPreFetchKb = static_cast<uint16_t>(ESP.getMaxAllocHeap() / 1024);
+  LOG_INF("REMOTE", "Downloading configured dashboard image, max contiguous block %u KB", maxAllocPreFetchKb);
   lastHttpStatus = 0;
   lastBytesReceived = 0;
+  lastSlowestWriteMs = 0;
   const unsigned long fetchStartedAt = millis();
   const auto downloadResult = downloadDashboardImage();
   if (downloadResult == HttpDownloader::ABORTED && autoRefresh && powerLatchTriggered()) {
@@ -381,10 +384,9 @@ void RemoteImageDashboardActivity::runFetch() {
           // A status line plus a failed transfer means the body did not
           // complete. The byte count says which: nothing at all, or a stall
           // part-way through.
-          snprintf(statusDetail, sizeof(statusDetail), "HTTP %d %uB %lus h%uk/%uk", lastHttpStatus,
-                   static_cast<unsigned>(lastBytesReceived), fetchElapsedS,
-                   static_cast<unsigned>(ESP.getFreeHeap() / 1024),
-                   static_cast<unsigned>(ESP.getMaxAllocHeap() / 1024));
+          snprintf(statusDetail, sizeof(statusDetail), "HTTP %d %uB %lus m%u/%u sd%lu", lastHttpStatus,
+                   static_cast<unsigned>(lastBytesReceived), fetchElapsedS, maxAllocEnterKb, maxAllocPreFetchKb,
+                   static_cast<unsigned long>(lastSlowestWriteMs));
         } else {
           // Never got a status line: DNS, TCP, or the TLS handshake.
           snprintf(statusDetail, sizeof(statusDetail), "no reply %uB %lus", static_cast<unsigned>(lastBytesReceived),
@@ -405,8 +407,8 @@ void RemoteImageDashboardActivity::runFetch() {
   } else {
     cachedImageAvailable = true;
     state = State::Showing;
-    snprintf(statusDetail, sizeof(statusDetail), "ok #%u h%uk/%uk", static_cast<unsigned>(++cycleCount),
-             static_cast<unsigned>(ESP.getFreeHeap() / 1024), static_cast<unsigned>(ESP.getMaxAllocHeap() / 1024));
+    snprintf(statusDetail, sizeof(statusDetail), "ok #%u m%u/%u/%u", static_cast<unsigned>(++cycleCount),
+             maxAllocEnterKb, maxAllocPreFetchKb, static_cast<unsigned>(ESP.getMaxAllocHeap() / 1024));
   }
 
   if (autoRefresh && powerLatchTriggered()) {
@@ -442,6 +444,7 @@ HttpDownloader::DownloadError RemoteImageDashboardActivity::downloadDashboardIma
     options.cancelRequested = cancelled;
     options.outHttpStatus = &lastHttpStatus;
     options.outBytesReceived = &lastBytesReceived;
+    options.outSlowestWriteMs = &lastSlowestWriteMs;
     return HttpDownloader::downloadToFile(dashboardUrl(), tempPath(), options);
   };
 

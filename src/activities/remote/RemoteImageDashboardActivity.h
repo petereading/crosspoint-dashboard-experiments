@@ -2,6 +2,8 @@
 
 #include <string>
 
+#include "CrossPointSettings.h"
+#include "CrossPointState.h"
 #include "activities/Activity.h"
 #include "network/HttpDownloader.h"
 
@@ -9,11 +11,13 @@
 // validation, display, and timed sleep; dashboard generation stays off-device.
 class RemoteImageDashboardActivity final : public Activity {
  public:
-  enum class Card { Clock, Weather, CustomImage };
-
-  explicit RemoteImageDashboardActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, Card card,
+  // slot indexes CrossPointSettings::lockScreenCardUrl. Every card is a URL and
+  // an interval; nothing else distinguishes one from another.
+  explicit RemoteImageDashboardActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, uint8_t slot,
                                         bool autoRefresh = false)
-      : Activity("RemoteImageDashboard", renderer, mappedInput), card(card), autoRefresh(autoRefresh) {}
+      : Activity("RemoteImageDashboard", renderer, mappedInput), slot(slot), autoRefresh(autoRefresh) {
+    buildCachePaths();
+  }
 
   void onEnter() override;
   void onExit() override;
@@ -32,8 +36,14 @@ class RemoteImageDashboardActivity final : public Activity {
   static constexpr unsigned long WIFI_RETRY_TIMEOUT_MS = 5000;
   static constexpr unsigned long DISPLAY_GRACE_INTERACTIVE_MS = 20000;
 
-  const Card card;
+  const uint8_t slot;
   const bool autoRefresh;
+  // Per-slot cache filenames, built once. These used to be a switch returning
+  // string literals per card kind; with numbered slots they are just formatted.
+  char imagePathBuf[40] = {};
+  char tempPathBuf[40] = {};
+  char backupPathBuf[40] = {};
+  char titleBuf[32] = {};
   State state = State::Connecting;
   bool wifiUsed = false;
   bool cachedImageAvailable = false;
@@ -45,6 +55,7 @@ class RemoteImageDashboardActivity final : public Activity {
   unsigned long sleepAt = 0;
   const char* errorMessage = nullptr;
 
+  void buildCachePaths();
   void promptUrl();
   void beginUpdate();
   void startDirectWifiConnect();
@@ -58,17 +69,19 @@ class RemoteImageDashboardActivity final : public Activity {
   void goToSleepAndPoll();
   void exitDashboardMode();
 
-  std::string dashboardUrl() const;
-  const char* configuredUrl() const;
-  char* configuredUrlBuffer() const;
-  size_t configuredUrlCapacity() const;
-  const char* imagePath() const;
-  const char* tempPath() const;
-  const char* backupPath() const;
-  const char* title() const;
+  // The URL is used exactly as configured -- no route, device or orientation is
+  // appended. Anything the image needs to know travels in the URL itself.
+  std::string dashboardUrl() const { return SETTINGS.lockScreenCardUrl[slot]; }
+  const char* configuredUrl() const { return SETTINGS.lockScreenCardUrl[slot]; }
+  char* configuredUrlBuffer() const { return SETTINGS.lockScreenCardUrl[slot]; }
+  size_t configuredUrlCapacity() const { return CrossPointSettings::LOCK_SCREEN_CARD_URL_LEN; }
+  const char* imagePath() const { return imagePathBuf; }
+  const char* tempPath() const { return tempPathBuf; }
+  const char* backupPath() const { return backupPathBuf; }
+  const char* title() const { return titleBuf; }
   const char* urlLabel() const;
-  uint8_t refreshMinutes() const;
-  uint8_t activeDashboardMode() const;
+  uint8_t refreshMinutes() const { return SETTINGS.cardRefreshMinutes(slot); }
+  uint8_t activeDashboardMode() const { return CrossPointState::DASHBOARD_CARD_BASE + slot; }
 
   void recoverInterruptedSwap();
   bool validateImageFile(const char* path) const;

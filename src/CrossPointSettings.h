@@ -38,13 +38,30 @@ class CrossPointSettings {
     // array position -> stored value directly, so only ever APPEND here.
   };
 
-  // Which lock-screen dashboard the LOCK_SCREEN sleep mode shows.
-  enum SLEEP_LOCK_SCREEN {
-    SLEEP_LOCK_CLOCK = 0,
-    SLEEP_LOCK_WEATHER = 1,
-    SLEEP_LOCK_CUSTOM_IMAGE = 2,
-    SLEEP_LOCK_SCREEN_COUNT
-  };
+  // Lock-screen cards are numbered slots, not named kinds: the URL decides what
+  // a card shows. Six covers a normal daily set with room to swap one out, at
+  // ~1.5 KB of settings RAM.
+  static constexpr uint8_t LOCK_SCREEN_CARD_COUNT = 6;
+  static constexpr size_t LOCK_SCREEN_CARD_URL_LEN = 256;
+
+  // Refresh interval for a card slot, in minutes. Out-of-range slots return the
+  // first card's interval rather than reading past the end.
+  uint8_t cardRefreshMinutes(uint8_t slot) const {
+    switch (slot) {
+      case 1:
+        return lockScreenCard2RefreshMinutes;
+      case 2:
+        return lockScreenCard3RefreshMinutes;
+      case 3:
+        return lockScreenCard4RefreshMinutes;
+      case 4:
+        return lockScreenCard5RefreshMinutes;
+      case 5:
+        return lockScreenCard6RefreshMinutes;
+      default:
+        return lockScreenCard1RefreshMinutes;
+    }
+  }
   enum SLEEP_SCREEN_COVER_MODE { FIT = 0, CROP = 1, SLEEP_SCREEN_COVER_MODE_COUNT };
   enum SLEEP_SCREEN_COVER_FILTER {
     NO_FILTER = 0,
@@ -289,21 +306,24 @@ class CrossPointSettings {
   // Public HTTPS URL for the externally generated Remote Image dashboard.
   // Retained only so older settings.json files can migrate to the new fields.
   char remoteImageUrl[256] = "";
-  // Base HTTPS URL for the combined dashboard Worker, without /clock.bmp or
-  // /weather.bmp. The firmware adds the route, hardware, and orientation.
-  char dashboardWorkerUrl[256] = "";
-  // Complete HTTPS URL for an arbitrary custom BMP.
-  char customImageUrl[256] = "";
-  // Poll intervals for the timed dashboards, in minutes
-  uint8_t githubRefreshMinutes = 60;
-  uint8_t clockRefreshMinutes = 1;
-  uint8_t weatherRefreshMinutes = 15;
-  uint8_t tempestRefreshMinutes = 10;
-  uint8_t customImageRefreshMinutes = 30;
-  // Orientation all lock-screen dashboards render in (shared setting).
-  uint8_t lockScreenOrientation = LOCK_ORIENT_LANDSCAPE;
-  // Which dashboard the LOCK_SCREEN sleep-screen mode shows.
-  uint8_t sleepLockScreenType = SLEEP_LOCK_CLOCK;
+  // Lock-screen cards. Every card is the same thing: a complete public HTTPS
+  // URL to a BMP, fetched verbatim, with its own refresh interval. Whatever
+  // generates the image -- a Worker route, a photo, anything else -- chooses
+  // its own content through query parameters in the URL, so the firmware needs
+  // no per-card routes, parameters or settings of its own.
+  char lockScreenCardUrl[LOCK_SCREEN_CARD_COUNT][LOCK_SCREEN_CARD_URL_LEN] = {};
+  // Named rather than an array because SettingsList addresses numeric settings
+  // by pointer-to-member, which cannot name an array element, and dynamic
+  // accessors are skipped by the settings loader so they would not persist.
+  // cardRefreshMinutes() gives the rest of the firmware indexed access.
+  uint8_t lockScreenCard1RefreshMinutes = 15;
+  uint8_t lockScreenCard2RefreshMinutes = 15;
+  uint8_t lockScreenCard3RefreshMinutes = 15;
+  uint8_t lockScreenCard4RefreshMinutes = 15;
+  uint8_t lockScreenCard5RefreshMinutes = 15;
+  uint8_t lockScreenCard6RefreshMinutes = 15;
+  // Which card the LOCK_SCREEN sleep-screen mode shows.
+  uint8_t sleepLockScreenCard = 0;
   // Cached ZIP -> lat/lon geocode for the weather dashboard, stored as decimal
   // strings (settings only support uint8_t/char[] fields). Not user-editable;
   // saved/loaded manually since a derived cache doesn't belong in SettingsList.

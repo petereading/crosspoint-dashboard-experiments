@@ -14,6 +14,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <string>
 
@@ -24,7 +25,6 @@
 #include "RemoteImageValidation.h"
 #include "SilentRestart.h"
 #include "WifiCredentialStore.h"
-#include "activities/dashboard/DashboardUI.h"
 #include "activities/network/WifiSelectionActivity.h"
 #include "activities/util/KeyboardEntryActivity.h"
 #include "components/UITheme.h"
@@ -37,6 +37,29 @@ volatile uint32_t remotePowerInterruptFired = 0;
 
 void IRAM_ATTR remotePowerInterruptHandler() { remotePowerInterruptFired = 1; }
 }  // namespace
+
+// A card's display name comes from the last path segment of its URL, so
+// ".../weather.bmp?units=metric" shows as "Weather" with nothing to configure.
+// Falls back to the slot number when the URL has no usable segment.
+void RemoteImageDashboardActivity::buildCachePaths() {
+  snprintf(imagePathBuf, sizeof(imagePathBuf), "/.crosspoint/card%u-image.bmp", static_cast<unsigned>(slot + 1));
+  snprintf(tempPathBuf, sizeof(tempPathBuf), "/.crosspoint/card%u-image.tmp", static_cast<unsigned>(slot + 1));
+  snprintf(backupPathBuf, sizeof(backupPathBuf), "/.crosspoint/card%u-image.bak", static_cast<unsigned>(slot + 1));
+
+  std::string url = SETTINGS.lockScreenCardUrl[slot];
+  const size_t query = url.find_first_of("?#");
+  if (query != std::string::npos) url.resize(query);
+  const size_t lastSlash = url.rfind('/');
+  std::string name = lastSlash == std::string::npos ? std::string() : url.substr(lastSlash + 1);
+  const size_t dot = name.rfind('.');
+  if (dot != std::string::npos) name.resize(dot);
+  if (name.empty()) {
+    snprintf(titleBuf, sizeof(titleBuf), "%s %u", tr(STR_LOCK_SCREEN_CARD), static_cast<unsigned>(slot + 1));
+    return;
+  }
+  name[0] = static_cast<char>(toupper(static_cast<unsigned char>(name[0])));
+  snprintf(titleBuf, sizeof(titleBuf), "%.*s", static_cast<int>(sizeof(titleBuf) - 1), name.c_str());
+}
 
 void RemoteImageDashboardActivity::onEnter() {
   Activity::onEnter();
@@ -414,127 +437,9 @@ void RemoteImageDashboardActivity::exitDashboardMode() {
   }
 }
 
-std::string RemoteImageDashboardActivity::dashboardUrl() const {
-  if (card == Card::CustomImage) return SETTINGS.customImageUrl;
-
-  std::string base = SETTINGS.dashboardWorkerUrl;
-  while (!base.empty() && base.back() == '/') base.pop_back();
-
-  // Be forgiving when an endpoint URL was pasted instead of the Worker base.
-  std::string lower = base;
-  std::transform(lower.begin(), lower.end(), lower.begin(),
-                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-  const size_t clockRoute = lower.find("/clock.bmp");
-  const size_t weatherRoute = lower.find("/weather.bmp");
-  const size_t route = clockRoute != std::string::npos ? clockRoute : weatherRoute;
-  if (route != std::string::npos) base.resize(route);
-  if (base.empty()) return {};
-
-  base += card == Card::Clock ? "/clock.bmp" : "/weather.bmp";
-  base += gpio.deviceIsX3() ? "?device=x3" : "?device=x4";
-  base += SETTINGS.lockScreenOrientation == CrossPointSettings::LOCK_ORIENT_PORTRAIT ? "&orientation=portrait"
-                                                                                     : "&orientation=landscape";
-  return base;
-}
-
-const char* RemoteImageDashboardActivity::configuredUrl() const {
-  return card == Card::CustomImage ? SETTINGS.customImageUrl : SETTINGS.dashboardWorkerUrl;
-}
-
-char* RemoteImageDashboardActivity::configuredUrlBuffer() const {
-  return card == Card::CustomImage ? SETTINGS.customImageUrl : SETTINGS.dashboardWorkerUrl;
-}
-
-size_t RemoteImageDashboardActivity::configuredUrlCapacity() const {
-  return card == Card::CustomImage ? sizeof(SETTINGS.customImageUrl) : sizeof(SETTINGS.dashboardWorkerUrl);
-}
-
-const char* RemoteImageDashboardActivity::imagePath() const {
-  switch (card) {
-    case Card::Clock:
-      return "/.crosspoint/clock-image.bmp";
-    case Card::Weather:
-      return "/.crosspoint/weather-image.bmp";
-    case Card::CustomImage:
-      return "/.crosspoint/custom-image.bmp";
-  }
-  return "/.crosspoint/custom-image.bmp";
-}
-
-const char* RemoteImageDashboardActivity::tempPath() const {
-  switch (card) {
-    case Card::Clock:
-      return "/.crosspoint/clock-image.tmp";
-    case Card::Weather:
-      return "/.crosspoint/weather-image.tmp";
-    case Card::CustomImage:
-      return "/.crosspoint/custom-image.tmp";
-  }
-  return "/.crosspoint/custom-image.tmp";
-}
-
-const char* RemoteImageDashboardActivity::backupPath() const {
-  switch (card) {
-    case Card::Clock:
-      return "/.crosspoint/clock-image.bak";
-    case Card::Weather:
-      return "/.crosspoint/weather-image.bak";
-    case Card::CustomImage:
-      return "/.crosspoint/custom-image.bak";
-  }
-  return "/.crosspoint/custom-image.bak";
-}
-
-const char* RemoteImageDashboardActivity::title() const {
-  switch (card) {
-    case Card::Clock:
-      return tr(STR_CLOCK_DASHBOARD);
-    case Card::Weather:
-      return tr(STR_WEATHER_DASHBOARD);
-    case Card::CustomImage:
-      return tr(STR_CUSTOM_IMAGE_DASHBOARD);
-  }
-  return tr(STR_CUSTOM_IMAGE_DASHBOARD);
-}
-
-const char* RemoteImageDashboardActivity::urlLabel() const {
-  return card == Card::CustomImage ? tr(STR_CUSTOM_IMAGE_URL) : tr(STR_DASHBOARD_WORKER_URL);
-}
-
-uint8_t RemoteImageDashboardActivity::refreshMinutes() const {
-  switch (card) {
-    case Card::Clock:
-      return SETTINGS.clockRefreshMinutes;
-    case Card::Weather:
-      return SETTINGS.weatherRefreshMinutes;
-    case Card::CustomImage:
-      return SETTINGS.customImageRefreshMinutes;
-  }
-  return SETTINGS.customImageRefreshMinutes;
-}
-
-uint8_t RemoteImageDashboardActivity::activeDashboardMode() const {
-  switch (card) {
-    case Card::Clock:
-      return CrossPointState::DASHBOARD_REMOTE_CLOCK;
-    case Card::Weather:
-      return CrossPointState::DASHBOARD_REMOTE_WEATHER;
-    case Card::CustomImage:
-      return CrossPointState::DASHBOARD_CUSTOM_IMAGE;
-  }
-  return CrossPointState::DASHBOARD_NONE;
-}
+const char* RemoteImageDashboardActivity::urlLabel() const { return tr(STR_REMOTE_IMAGE_URL); }
 
 void RemoteImageDashboardActivity::recoverInterruptedSwap() {
-  // Preserve the last image from builds that had one shared Remote Image
-  // cache. It belongs to whichever card the settings migration selected.
-  const char* legacyImagePath = Storage.exists("/.crosspoint/remote-image.bmp") ? "/.crosspoint/remote-image.bmp"
-                                                                                : "/.crosspoint/remote-image.bak";
-  if (!Storage.exists(imagePath()) && Storage.exists(legacyImagePath)) {
-    if (Storage.rename(legacyImagePath, imagePath())) {
-      LOG_INF("REMOTE", "Migrated legacy dashboard image cache");
-    }
-  }
   if (!Storage.exists(imagePath()) && Storage.exists(backupPath())) {
     if (Storage.rename(backupPath(), imagePath())) {
       LOG_INF("REMOTE", "Recovered previous dashboard image after interrupted update");
@@ -543,8 +448,14 @@ void RemoteImageDashboardActivity::recoverInterruptedSwap() {
     Storage.remove(backupPath());
   }
   if (Storage.exists(tempPath())) Storage.remove(tempPath());
-  if (Storage.exists("/.crosspoint/remote-image.tmp")) Storage.remove("/.crosspoint/remote-image.tmp");
-  if (Storage.exists("/.crosspoint/remote-image.bak")) Storage.remove("/.crosspoint/remote-image.bak");
+  // Caches from the named-card builds cannot map onto numbered slots, and a
+  // card repopulates itself on its first refresh, so drop them rather than
+  // guess which slot they belonged to.
+  for (const char* stale :
+       {"/.crosspoint/remote-image.bmp", "/.crosspoint/remote-image.tmp", "/.crosspoint/remote-image.bak",
+        "/.crosspoint/clock-image.bmp", "/.crosspoint/weather-image.bmp", "/.crosspoint/custom-image.bmp"}) {
+    if (Storage.exists(stale)) Storage.remove(stale);
+  }
 }
 
 bool RemoteImageDashboardActivity::validateImageFile(const char* path) const {

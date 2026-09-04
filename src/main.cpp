@@ -515,16 +515,14 @@ void setup() {
       break;
   }
 
-  if (dashboardResume == CrossPointState::DASHBOARD_REMOTE_CLOCK) {
-    // Unattended timer wake: refresh the dashboard and go back to timed sleep.
+  if (dashboardResumeActive) {
+    // Unattended timer wake: refresh that card slot and go back to timed sleep.
+    // Slots are contiguous from DASHBOARD_CARD_BASE, so this stays one branch
+    // however many cards exist.
+    const uint8_t slot = dashboardResume - CrossPointState::DASHBOARD_CARD_BASE;
     activityManager.replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
-        renderer, mappedInputManager, RemoteImageDashboardActivity::Card::Clock, /*autoRefresh=*/true));
-  } else if (dashboardResume == CrossPointState::DASHBOARD_REMOTE_WEATHER) {
-    activityManager.replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
-        renderer, mappedInputManager, RemoteImageDashboardActivity::Card::Weather, /*autoRefresh=*/true));
-  } else if (dashboardResume == CrossPointState::DASHBOARD_CUSTOM_IMAGE) {
-    activityManager.replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
-        renderer, mappedInputManager, RemoteImageDashboardActivity::Card::CustomImage, /*autoRefresh=*/true));
+        renderer, mappedInputManager, slot < CrossPointSettings::LOCK_SCREEN_CARD_COUNT ? slot : 0,
+        /*autoRefresh=*/true));
   } else if (recoveryFirmwareMode) {
     // Skip normal home/reader routing: jump straight into the SD firmware picker.
     activityManager.replaceActivity(

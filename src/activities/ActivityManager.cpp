@@ -198,19 +198,8 @@ void ActivityManager::goToBrowser() {
   }
 }
 
-void ActivityManager::goToClockDashboard() {
-  replaceActivity(
-      std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, RemoteImageDashboardActivity::Card::Clock));
-}
-
-void ActivityManager::goToWeatherDashboard() {
-  replaceActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput,
-                                                                 RemoteImageDashboardActivity::Card::Weather));
-}
-
-void ActivityManager::goToCustomImageDashboard() {
-  replaceActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput,
-                                                                 RemoteImageDashboardActivity::Card::CustomImage));
+void ActivityManager::goToLockScreenCard(const uint8_t slot) {
+  pushActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, slot));
 }
 
 void ActivityManager::goToLockScreens() {
@@ -218,20 +207,9 @@ void ActivityManager::goToLockScreens() {
 }
 
 void ActivityManager::goToLockScreenDashboard() {
-  switch (SETTINGS.sleepLockScreenType) {
-    case CrossPointSettings::SLEEP_LOCK_WEATHER:
-      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
-          renderer, mappedInput, RemoteImageDashboardActivity::Card::Weather, /*autoRefresh=*/true));
-      break;
-    case CrossPointSettings::SLEEP_LOCK_CUSTOM_IMAGE:
-      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
-          renderer, mappedInput, RemoteImageDashboardActivity::Card::CustomImage, /*autoRefresh=*/true));
-      break;
-    default:
-      replaceActivity(std::make_unique<RemoteImageDashboardActivity>(
-          renderer, mappedInput, RemoteImageDashboardActivity::Card::Clock, /*autoRefresh=*/true));
-      break;
-  }
+  const uint8_t slot =
+      SETTINGS.sleepLockScreenCard < CrossPointSettings::LOCK_SCREEN_CARD_COUNT ? SETTINGS.sleepLockScreenCard : 0;
+  replaceActivity(std::make_unique<RemoteImageDashboardActivity>(renderer, mappedInput, slot, /*autoRefresh=*/true));
 }
 
 void ActivityManager::goToReader(std::string path) {

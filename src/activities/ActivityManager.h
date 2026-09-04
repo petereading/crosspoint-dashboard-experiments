@@ -86,11 +86,10 @@ class ActivityManager {
   void goToFileBrowser(std::string path = {});
   void goToRecentBooks();
   void goToBrowser();
-  void goToClockDashboard();
-  void goToWeatherDashboard();
-  void goToCustomImageDashboard();
+  // Open one lock-screen card slot as an interactive preview.
+  void goToLockScreenCard(uint8_t slot);
   void goToLockScreens();
-  // Launch the SETTINGS.sleepLockScreenType dashboard in unattended
+  // Launch the SETTINGS.sleepLockScreenCard dashboard in unattended
   // (autoRefresh) mode, for the LOCK_SCREEN sleep-screen behavior.
   void goToLockScreenDashboard();
   void goToReader(std::string path);

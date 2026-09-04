@@ -31,6 +31,10 @@ class HttpDownloader {
     uint32_t overallTimeoutMs = 0;
     bool bypassCache = false;
     CancelCallback cancelRequested;
+    // Optional diagnostics. "Image download failed" covers a bad status, a
+    // timeout and an SD write failure alike; these tell the caller which.
+    int* outHttpStatus = nullptr;
+    size_t* outBytesReceived = nullptr;
   };
 
   /**

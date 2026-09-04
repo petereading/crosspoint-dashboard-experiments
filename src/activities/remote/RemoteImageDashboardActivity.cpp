@@ -280,7 +280,10 @@ void RemoteImageDashboardActivity::loop() {
 void RemoteImageDashboardActivity::runFetch() {
   Storage.mkdir("/.crosspoint");
 
-  LOG_INF("REMOTE", "Downloading configured dashboard image");
+  lastHttpStatus = 0;
+  lastBytesReceived = 0;
+  const unsigned long fetchStartedAt = millis();
+  LOG_INF("REMOTE", "Downloading %s -> %s", dashboardUrl().c_str(), tempPath());
   const auto downloadResult = downloadDashboardImage();
   if (downloadResult == HttpDownloader::ABORTED && autoRefresh && powerLatchTriggered()) {
     LOG_INF("REMOTE", "Dashboard download cancelled by power button");
@@ -288,13 +291,39 @@ void RemoteImageDashboardActivity::runFetch() {
     return;
   }
   if (downloadResult != HttpDownloader::OK) {
-    LOG_ERR("REMOTE", "Image download failed: %d", static_cast<int>(downloadResult));
+    const unsigned long elapsedS = (millis() - fetchStartedAt + 500) / 1000;
+    LOG_ERR("REMOTE", "Image download failed: %d (HTTP %d, %u bytes in %lu s)", static_cast<int>(downloadResult),
+            lastHttpStatus, static_cast<unsigned>(lastBytesReceived), elapsedS);
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_FETCH_FAILED);
+    switch (downloadResult) {
+      case HttpDownloader::FILE_ERROR:
+        // Never reached the network: the temp file could not be written.
+        snprintf(failureDetail, sizeof(failureDetail), "SD write failed %uB", static_cast<unsigned>(lastBytesReceived));
+        break;
+      case HttpDownloader::TIMED_OUT:
+        snprintf(failureDetail, sizeof(failureDetail), "timeout %uB %lus", static_cast<unsigned>(lastBytesReceived),
+                 elapsedS);
+        break;
+      case HttpDownloader::ABORTED:
+        snprintf(failureDetail, sizeof(failureDetail), "cancelled");
+        break;
+      default:
+        if (lastHttpStatus > 0) {
+          snprintf(failureDetail, sizeof(failureDetail), "HTTP %d %uB %lus", lastHttpStatus,
+                   static_cast<unsigned>(lastBytesReceived), elapsedS);
+        } else {
+          // No status line at all: DNS, TCP or the TLS handshake.
+          snprintf(failureDetail, sizeof(failureDetail), "no reply %uB %lus", static_cast<unsigned>(lastBytesReceived),
+                   elapsedS);
+        }
+        break;
+    }
   } else if (!validateImageFile(tempPath())) {
     Storage.remove(tempPath());
     state = State::Failed;
     errorMessage = tr(STR_REMOTE_IMAGE_INVALID);
+    failureDetail[0] = '\0';
   } else if (!promoteDownloadedImage()) {
     Storage.remove(tempPath());
     state = State::Failed;
@@ -334,6 +363,8 @@ HttpDownloader::DownloadError RemoteImageDashboardActivity::downloadDashboardIma
     options.overallTimeoutMs = budgetMs;
     options.bypassCache = true;
     options.cancelRequested = cancelled;
+    options.outHttpStatus = &lastHttpStatus;
+    options.outBytesReceived = &lastBytesReceived;
     return HttpDownloader::downloadToFile(dashboardUrl(), tempPath(), options);
   };
 
@@ -591,6 +622,19 @@ void RemoteImageDashboardActivity::renderMessage(const char* message) const {
   renderer.clearScreen();
   renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 30, title(), true, EpdFontFamily::BOLD);
   renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 5, message);
+
+  // A failure that names only "Image download failed" cannot be acted on: show
+  // which of the three faults it was, and the URL actually requested, so a
+  // wrong stored URL is visible on the device rather than inferred.
+  if (state == State::Failed && failureDetail[0] != '\0') {
+    renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 30, failureDetail);
+    const std::string url = dashboardUrl();
+    // The panel fits roughly 60 characters of the small font; the tail carries
+    // the route and query, which is the part that varies per card.
+    constexpr size_t URL_TAIL = 58;
+    const std::string tail = url.size() > URL_TAIL ? url.substr(url.size() - URL_TAIL) : url;
+    renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 48, tail.c_str());
+  }
 
   if (!autoRefresh && state == State::Failed) {
     const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_REMOTE_IMAGE_CHANGE_URL), "", "");

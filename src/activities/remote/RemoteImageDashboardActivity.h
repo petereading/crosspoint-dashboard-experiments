@@ -54,6 +54,12 @@ class RemoteImageDashboardActivity final : public Activity {
   unsigned long wifiConnectStart = 0;
   unsigned long sleepAt = 0;
   const char* errorMessage = nullptr;
+  // Why the last fetch failed, in terms that separate the three faults the
+  // single "Image download failed" string used to hide: a bad HTTP status, a
+  // timeout, and a failure to write the temp file to SD.
+  char failureDetail[48] = {};
+  int lastHttpStatus = 0;
+  size_t lastBytesReceived = 0;
 
   void buildCachePaths();
   void promptUrl();

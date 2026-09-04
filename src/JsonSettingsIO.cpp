@@ -186,7 +186,11 @@ bool JsonSettingsIO::loadSettings(CrossPointSettings& s, const char* json, bool*
   }
 
   auto clamp = [](uint8_t val, uint8_t maxVal, uint8_t def) -> uint8_t { return val < maxVal ? val : def; };
-  const bool needsDashboardMigration = doc["dashboardWorkerUrl"].isNull() && doc["customImageUrl"].isNull();
+  // Migrate only when a legacy key is actually present. Testing for the ABSENCE
+  // of keys that no longer exist made this true on every load, which reset the
+  // sleep card to slot 1 on every boot and rewrote settings needlessly.
+  const bool needsDashboardMigration =
+      !doc["remoteImageUrl"].isNull() || !doc["dashboardWorkerUrl"].isNull() || !doc["customImageUrl"].isNull();
   const uint8_t legacyLockScreenType = doc["sleepLockScreenType"] | static_cast<uint8_t>(0);
   const std::string legacyRemoteImageUrl = doc["remoteImageUrl"] | std::string("");
   const uint8_t legacyRemoteRefresh = doc["remoteImageRefreshMinutes"] | static_cast<uint8_t>(30);

@@ -255,6 +255,7 @@ HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& 
 
   const DownloadError result = runGet(url, username, password, sink);
   if (options.outBytesReceived) *options.outBytesReceived = sink.downloaded;
+  if (options.outExpectedBytes) *options.outExpectedBytes = sink.total;
   // Close before any remove() on the same path; DESTRUCTOR_CLOSES_FILE would
   // otherwise close only after the remove.
   file.close();

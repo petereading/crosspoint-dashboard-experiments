@@ -282,6 +282,7 @@ void RemoteImageDashboardActivity::runFetch() {
 
   lastHttpStatus = 0;
   lastBytesReceived = 0;
+  lastExpectedBytes = 0;
   const unsigned long fetchStartedAt = millis();
   LOG_INF("REMOTE", "Downloading %s -> %s", dashboardUrl().c_str(), tempPath());
   const auto downloadResult = downloadDashboardImage();
@@ -309,7 +310,12 @@ void RemoteImageDashboardActivity::runFetch() {
         snprintf(failureDetail, sizeof(failureDetail), "cancelled");
         break;
       default:
-        if (lastHttpStatus > 0) {
+        if (lastHttpStatus == 200 && lastExpectedBytes > lastBytesReceived) {
+          // The server answered and the body started arriving but stopped
+          // short: a cut-off transfer, not a server or network error.
+          snprintf(failureDetail, sizeof(failureDetail), "cut off %u/%uB %lus",
+                   static_cast<unsigned>(lastBytesReceived), static_cast<unsigned>(lastExpectedBytes), elapsedS);
+        } else if (lastHttpStatus > 0) {
           snprintf(failureDetail, sizeof(failureDetail), "HTTP %d %uB %lus", lastHttpStatus,
                    static_cast<unsigned>(lastBytesReceived), elapsedS);
         } else {
@@ -365,12 +371,25 @@ HttpDownloader::DownloadError RemoteImageDashboardActivity::downloadDashboardIma
     options.cancelRequested = cancelled;
     options.outHttpStatus = &lastHttpStatus;
     options.outBytesReceived = &lastBytesReceived;
+    options.outExpectedBytes = &lastExpectedBytes;
     return HttpDownloader::downloadToFile(dashboardUrl(), tempPath(), options);
   };
 
   const unsigned long firstBudget = std::min(FETCH_FIRST_ATTEMPT_MS, remainingBudget());
   auto result = fetchOnce(firstBudget);
   if (result == HttpDownloader::OK || result == HttpDownloader::ABORTED || cancelled()) return result;
+
+  // A status line means DNS, TCP and TLS all worked, so the link is not what
+  // failed -- the body was. Dropping WiFi and re-associating would spend the
+  // remaining budget on a fresh handshake instead of on the transfer, so only
+  // reconnect when the first attempt never got a reply at all.
+  if (lastHttpStatus > 0) {
+    const unsigned long directBudget = remainingBudget();
+    if (directBudget == 0) return HttpDownloader::TIMED_OUT;
+    LOG_INF("REMOTE", "First image fetch failed (%d) after HTTP %d; retrying on the same connection",
+            static_cast<int>(result), lastHttpStatus);
+    return fetchOnce(directBudget);
+  }
 
   LOG_INF("REMOTE", "First image fetch failed (%d); reconnecting once", static_cast<int>(result));
   const unsigned long reconnectBudget = std::min(WIFI_RETRY_TIMEOUT_MS, remainingBudget());

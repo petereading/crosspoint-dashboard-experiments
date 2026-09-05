@@ -30,9 +30,18 @@ class RemoteImageDashboardActivity final : public Activity {
   enum class State { Connecting, Fetching, Showing, Failed };
 
   static constexpr unsigned long WIFI_TIMEOUT_MS = 45000;
-  static constexpr unsigned long FETCH_TOTAL_TIMEOUT_MS = 25000;
-  static constexpr unsigned long FETCH_FIRST_ATTEMPT_MS = 9000;
-  static constexpr unsigned long FETCH_OPERATION_TIMEOUT_MS = 3000;
+  // A card is ~53 KB of BMP over verified TLS. The old budgets (25 s total,
+  // 9 s first attempt, 3 s per socket read) left roughly five seconds of body
+  // time once DNS, TCP, the TLS handshake and the server's first byte were
+  // paid for, so the transfer only completed on a link sustaining ~10 KB/s and
+  // was cut off mid-body otherwise -- the "HTTP 200, 6845 of 53000 bytes,
+  // 25 s" failure. These give a slow link room to finish instead.
+  static constexpr unsigned long FETCH_TOTAL_TIMEOUT_MS = 90000;
+  static constexpr unsigned long FETCH_FIRST_ATTEMPT_MS = 60000;
+  // Per socket read, not per transfer. HttpDownloader's own default is 60 s
+  // because 15 s was found to kill slow servers; 3 s aborted the whole fetch
+  // on any single chunk that arrived late.
+  static constexpr unsigned long FETCH_OPERATION_TIMEOUT_MS = 20000;
   static constexpr unsigned long WIFI_RETRY_TIMEOUT_MS = 5000;
   static constexpr unsigned long DISPLAY_GRACE_INTERACTIVE_MS = 20000;
 
@@ -60,6 +69,7 @@ class RemoteImageDashboardActivity final : public Activity {
   char failureDetail[48] = {};
   int lastHttpStatus = 0;
   size_t lastBytesReceived = 0;
+  size_t lastExpectedBytes = 0;
 
   void buildCachePaths();
   void promptUrl();

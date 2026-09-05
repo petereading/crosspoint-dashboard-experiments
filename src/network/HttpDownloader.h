@@ -35,6 +35,9 @@ class HttpDownloader {
     // timeout and an SD write failure alike; these tell the caller which.
     int* outHttpStatus = nullptr;
     size_t* outBytesReceived = nullptr;
+    // Content-Length, so a caller can tell a truncated body apart from a body
+    // that simply was that short. 0 when the response is chunked.
+    size_t* outExpectedBytes = nullptr;
   };
 
   /**

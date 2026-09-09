@@ -3,6 +3,10 @@ on:
   push:
     tags:
       - '*'
+  # Build on demand from any branch. GitHub only shows the "Run workflow"
+  # button when this trigger is present on the default branch, so it lives
+  # here as well as on the branches being built.
+  workflow_dispatch:
 
 jobs:
   build-release:
